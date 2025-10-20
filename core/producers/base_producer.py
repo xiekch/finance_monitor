@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import List
 from core.message_queue import mq
-from core.message_types import BaseMessage, MessageType
+from core.message_types import BaseMessage
 
 class BaseProducer(ABC):
     """生产者基类"""
@@ -11,8 +11,8 @@ class BaseProducer(ABC):
         self.is_running = False
     
     @abstractmethod
-    def produce_data(self) -> List[BaseMessage]:
-        """生产数据（由子类实现）"""
+    async def produce_data(self) -> List[BaseMessage]:
+        """生产数据（异步方法，由子类实现）"""
         pass
     
     def publish_message(self, message: BaseMessage, channel: str = None):
@@ -25,23 +25,34 @@ class BaseProducer(ABC):
     
     def start_production(self, interval: int = 60):
         """开始生产数据"""
-        import time
+        import asyncio
         import threading
         
         self.is_running = True
         
-        def production_loop():
+        async def production_loop():
             while self.is_running:
                 try:
-                    messages = self.produce_data()
+                    messages = await self.produce_data()
                     for message in messages:
                         self.publish_message(message)
+                    
+                    print(f"[{self.producer_name}] 本轮生产完成，生成 {len(messages)} 条消息")
+                    
                 except Exception as e:
                     print(f"[{self.producer_name}] 生产数据失败: {e}")
                 
-                time.sleep(interval)
+                await asyncio.sleep(interval)
         
-        thread = threading.Thread(target=production_loop)
+        def run_async_loop():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(production_loop())
+            finally:
+                loop.close()
+        
+        thread = threading.Thread(target=run_async_loop)
         thread.daemon = True
         thread.start()
         print(f"[{self.producer_name}] 生产者已启动，间隔: {interval}秒")

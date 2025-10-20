@@ -3,7 +3,8 @@ import signal
 import sys
 from datetime import datetime
 
-from core.producers.stock_producer import StockProducer
+from core.producers.astock_producer import AStockProducer
+from core.producers.usstock_producer import USStockProducer
 from core.producers.crypto_producer import CryptoProducer
 from core.consumers.volatility_consumer import VolatilityConsumer
 from core.consumers.notification_consumer import NotificationConsumer
@@ -27,10 +28,14 @@ class ProducerConsumerApp:
 
     def setup_producers(self):
         """设置生产者"""
-        # 股票数据生产者
-        stock_producer = StockProducer()
-        self.producers.append(stock_producer)
-
+        # A股数据生产者
+        a_stock_producer = AStockProducer()
+        self.producers.append(a_stock_producer)
+        
+        # 美股数据生产者  
+        us_stock_producer = USStockProducer()
+        self.producers.append(us_stock_producer)
+        
         # 加密货币数据生产者
         crypto_producer = CryptoProducer()
         self.producers.append(crypto_producer)
@@ -75,12 +80,12 @@ class ProducerConsumerApp:
 
         # 启动生产者
         for producer in self.producers:
-            if isinstance(producer, CryptoProducer):
-                # 加密货币生产者使用WebSocket
-                producer.start_websocket_production()
-            else:
-                # 其他生产者使用轮询
-                producer.start_production(interval=60)  # 60秒间隔
+            # if isinstance(producer, CryptoProducer):
+            #     # 加密货币生产者使用WebSocket
+            #     producer.start_websocket_production()
+            # else:
+            # 其他生产者使用轮询
+            producer.start_production(interval=60)  # 60秒间隔
 
         # 发送系统启动事件
         startup_message = SystemEventMessage(

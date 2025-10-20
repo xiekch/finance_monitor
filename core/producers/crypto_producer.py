@@ -14,7 +14,7 @@ class CryptoProducer(BaseProducer):
         super().__init__("CryptoProducer")
         self.crypto_fetcher = CryptoFetcher(API_CONFIG)
     
-    def produce_data(self) -> List[PriceDataMessage]:
+    async def produce_data(self) -> List[PriceDataMessage]:
         """生产加密货币数据"""
         messages = []
         
