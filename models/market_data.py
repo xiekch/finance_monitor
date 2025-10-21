@@ -30,6 +30,20 @@ class PriceData:
             'frequency': self.frequency
         }
 
+@dataclass
+class VolatilityAlert:
+    """波动率预警类（完整版）"""
+    
+    symbol: str
+    name: str
+    frequency: str
+    current_change: float
+    threshold: float
+    current_price: float
+    previous_price: float
+    timestamp: datetime
+    volume: Optional[float] = None
+
 class MarketDataDB:
     """市场数据数据库管理"""
     

@@ -22,13 +22,8 @@ class CryptoProducer(BaseProducer):
             # 获取分钟级数据
             crypto_symbols = MONITOR_CONFIG['minute']['crypto']
             if crypto_symbols:
-                # 在事件循环中运行异步函数
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                crypto_data = loop.run_until_complete(
-                    self.crypto_fetcher.fetch_realtime_data(crypto_symbols)
-                )
-                loop.close()
+                # 直接使用 await 调用异步函数
+                crypto_data = await self.crypto_fetcher.fetch_realtime_data(crypto_symbols)
                 
                 for data in crypto_data:
                     message = PriceDataMessage(

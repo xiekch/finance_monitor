@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
 from models.market_data import PriceData, VolatilityAlert
-from .threshold_manager import ThresholdManager
+from core.threshold_manager import ThresholdManager
 
 class VolatilityAnalyzer:
     """波动分析器"""
