@@ -2,47 +2,64 @@ import asyncio
 from typing import List
 from datetime import datetime
 import logging
+from apscheduler.triggers.cron import CronTrigger
 from .base_producer import BaseProducer
 from core.message_types import PriceDataMessage, FrequencyType, MessageType
 from core.fetchers.us_stock_yf_fetcher import USStockYfFetcher
 from config.settings import API_CONFIG, MONITOR_CONFIG
 
-class USStockProducer(BaseProducer):
-    """美股数据生产者"""
+
+class USStockMinuteProducer(BaseProducer):
+    """美股分钟级数据生产者"""
     
-    def __init__(self):
-        super().__init__("USStockProducer")
+    def __init__(self, interval_minutes: int = 5):
+        super().__init__(f"USStockMinuteProducer_{interval_minutes}min")
         self.us_stock_fetcher = USStockYfFetcher(API_CONFIG)
-        self.frequency_mapping = {
-            'minute': FrequencyType.MINUTE,
-            'daily': FrequencyType.DAILY,
-            'weekly': FrequencyType.WEEKLY
-        }
+        self.interval_minutes = interval_minutes
+    
+    def create_trigger(self) -> CronTrigger:
+        """
+        创建分钟级调度触发器
+        在美股交易时间内每N分钟运行一次
+        """
+        return CronTrigger(
+            hour='21-4',  # 北京时间晚上9点到次日凌晨4点（美东时间9:30-16:00）
+            minute=f'*/{self.interval_minutes}',
+            day_of_week='mon-fri'  # 只在周一到周五运行
+        )
     
     async def produce_data(self) -> List[PriceDataMessage]:
-        """生产美股数据（异步版本）"""
+        """生产美股分钟级数据"""
         messages = []
         
         try:
             # 获取美股标的
             us_stock_symbols = self._get_us_stock_symbols('minute')
-            if us_stock_symbols:
-                stock_data = await self.us_stock_fetcher.fetch_realtime_data(us_stock_symbols)
-                
-                for data in stock_data:
-                    if data:  # 确保数据有效
-                        message = PriceDataMessage(
-                            symbol=data.symbol,
-                            market='US',  # 美股统一使用US市场代码
-                            frequency=FrequencyType.MINUTE,
-                            price_data=data.to_dict(),
-                            source=self.producer_name
-                        )
-                        messages.append(message)
-                        logging.info(f"[{self.producer_name}] 生产美股数据: {data.symbol} ${data.close:.2f}")
-        
+            
+            if not us_stock_symbols:
+                logging.warning(f"[{self.producer_name}] 未找到美股标的配置")
+                return messages
+            
+            # 获取实时分钟数据
+            stock_data = await self.us_stock_fetcher.fetch_realtime_data(us_stock_symbols)
+            
+            for data in stock_data:
+                if data:  # 确保数据有效
+                    message = PriceDataMessage(
+                        symbol=data.symbol,
+                        market='US',
+                        frequency=FrequencyType.MINUTE,
+                        price_data=data.to_dict(),
+                        source=self.producer_name,
+                        timestamp=datetime.now()
+                    )
+                    messages.append(message)
+                    logging.info(f"[{self.producer_name}] 生产分钟数据: {data.symbol} ${data.close:.2f}")
+            
+            logging.info(f"[{self.producer_name}] 生产完成，共生成 {len(messages)} 条分钟数据")
+            
         except Exception as e:
-            logging.error(f"[{self.producer_name}] 生产美股数据失败: {e}")
+            logging.error(f"[{self.producer_name}] 生产美股分钟数据失败: {e}")
         
         return messages
     
@@ -54,11 +71,10 @@ class USStockProducer(BaseProducer):
         for symbol_info in all_symbols:
             market = symbol_info.get('market', '')
             symbol = symbol_info.get('symbol', '')
-            # 选择美股（市场为US，或者符号是典型的美股代码）
             if market in ['US', 'NASDAQ', 'NYSE'] or self._is_us_stock_symbol(symbol):
                 us_stock_symbols.append({
                     'symbol': symbol,
-                    'market': 'US',  # 统一标记为US
+                    'market': 'US',
                     'name': symbol_info.get('name', symbol),
                     'threshold': symbol_info.get('threshold', 2.0)
                 })
@@ -67,7 +83,6 @@ class USStockProducer(BaseProducer):
     
     def _is_us_stock_symbol(self, symbol: str) -> bool:
         """判断是否为美股符号"""
-        # 美股通常为1-5个字母的代码
         if len(symbol) <= 5 and symbol.isalpha() and symbol.isupper():
             return True
         return False
@@ -75,64 +90,289 @@ class USStockProducer(BaseProducer):
     def _get_symbols_by_frequency(self, frequency: str, asset_type: str):
         """获取指定频率和资产类型的标的"""
         return MONITOR_CONFIG.get(frequency, {}).get(asset_type, [])
+
+
+class USStockDailyProducer(BaseProducer):
+    """美股日级数据生产者"""
     
-    async def produce_historical_data(self, frequency: FrequencyType):
-        """生产美股历史数据"""
+    def __init__(self):
+        super().__init__("USStockDailyProducer")
+        self.us_stock_fetcher = USStockYfFetcher(API_CONFIG)
+    
+    def create_trigger(self) -> CronTrigger:
+        """
+        创建日级调度触发器
+        每天美股收盘后运行（北京时间凌晨5点）
+        """
+        return CronTrigger(
+            hour=5,           # 北京时间凌晨5点
+            minute=0,
+            second=0,
+            day_of_week='mon-fri'  # 只在工作日运行
+        )
+    
+    async def produce_data(self) -> List[PriceDataMessage]:
+        """生产美股日级数据"""
+        messages = []
+        
         try:
-            us_stock_symbols = self._get_us_stock_symbols(frequency.value)
-            historical_messages = []
+            # 获取美股标的
+            us_stock_symbols = self._get_us_stock_symbols('daily')
+            
+            if not us_stock_symbols:
+                logging.warning(f"[{self.producer_name}] 未找到美股标的配置")
+                return messages
+            
+            logging.info(f"[{self.producer_name}] 开始处理 {len(us_stock_symbols)} 个美股标的")
             
             for symbol_info in us_stock_symbols:
-                # 获取历史数据
-                historical_data = await self.us_stock_fetcher.fetch_historical_data(
-                    symbol=symbol_info['symbol'],
-                    frequency=self._convert_frequency(frequency),
-                    limit=100
-                )
-                
-                for data in historical_data:
+                try:
+                    symbol = symbol_info['symbol']
+                    
+                    # 获取日线数据
+                    historical_data = await self.us_stock_fetcher.fetch_historical_data(
+                        symbol=symbol,
+                        frequency='1d',
+                        limit=1  # 只需要最近一天
+                    )
+                    
+                    if historical_data and len(historical_data) > 0:
+                        data = historical_data[0]
+                        
+                        message = PriceDataMessage(
+                            symbol=data.symbol,
+                            market='US',
+                            frequency=FrequencyType.DAILY,
+                            price_data=data.to_dict(),
+                            source=self.producer_name,
+                            timestamp=datetime.now()
+                        )
+                        messages.append(message)
+                        
+                        logging.info(f"[{self.producer_name}] 生产日线数据: {data.symbol} "
+                                   f"收盘价: ${data.close:.2f}")
+                    else:
+                        logging.warning(f"[{self.producer_name}] 未获取到 {symbol} 的日线数据")
+                        
+                except Exception as e:
+                    logging.error(f"[{self.producer_name}] 处理标的 {symbol_info.get('symbol')} 失败: {e}")
+                    continue
+        
+        except Exception as e:
+            logging.error(f"[{self.producer_name}] 生产美股日线数据失败: {e}")
+        
+        logging.info(f"[{self.producer_name}] 生产完成，共生成 {len(messages)} 条日线数据")
+        return messages
+    
+    def _get_us_stock_symbols(self, frequency: str) -> List[dict]:
+        """获取美股标的列表"""
+        all_symbols = self._get_symbols_by_frequency(frequency, 'stocks')
+        us_stock_symbols = []
+        
+        for symbol_info in all_symbols:
+            market = symbol_info.get('market', '')
+            symbol = symbol_info.get('symbol', '')
+            if market in ['US', 'NASDAQ', 'NYSE'] or self._is_us_stock_symbol(symbol):
+                us_stock_symbols.append({
+                    'symbol': symbol,
+                    'market': 'US',
+                    'name': symbol_info.get('name', symbol),
+                    'threshold': symbol_info.get('threshold', 2.0)
+                })
+        
+        return us_stock_symbols
+    
+    def _is_us_stock_symbol(self, symbol: str) -> bool:
+        """判断是否为美股符号"""
+        if len(symbol) <= 5 and symbol.isalpha() and symbol.isupper():
+            return True
+        return False
+    
+    def _get_symbols_by_frequency(self, frequency: str, asset_type: str):
+        """获取指定频率和资产类型的标的"""
+        return MONITOR_CONFIG.get(frequency, {}).get(asset_type, [])
+
+
+class USStockWeeklyProducer(BaseProducer):
+    """美股周级数据生产者"""
+    
+    def __init__(self):
+        super().__init__("USStockWeeklyProducer")
+        self.us_stock_fetcher = USStockYfFetcher(API_CONFIG)
+    
+    def create_trigger(self) -> CronTrigger:
+        """
+        创建周级调度触发器
+        每周一早上运行（获取上周数据）
+        """
+        return CronTrigger(
+            day_of_week='mon',  # 每周一
+            hour=6,             # 北京时间早上6点
+            minute=0,
+            second=0
+        )
+    
+    async def produce_data(self) -> List[PriceDataMessage]:
+        """生产美股周级数据"""
+        messages = []
+        
+        try:
+            # 获取美股标的
+            us_stock_symbols = self._get_us_stock_symbols('weekly')
+            
+            if not us_stock_symbols:
+                logging.warning(f"[{self.producer_name}] 未找到美股标的配置")
+                return messages
+            
+            logging.info(f"[{self.producer_name}] 开始处理 {len(us_stock_symbols)} 个美股标的")
+            
+            for symbol_info in us_stock_symbols:
+                try:
+                    symbol = symbol_info['symbol']
+                    
+                    # 获取周线数据
+                    historical_data = await self.us_stock_fetcher.fetch_historical_data(
+                        symbol=symbol,
+                        frequency='1w',
+                        limit=1  # 只需要最近一周
+                    )
+                    
+                    if historical_data and len(historical_data) > 0:
+                        data = historical_data[0]
+                        
+                        message = PriceDataMessage(
+                            symbol=data.symbol,
+                            market='US',
+                            frequency=FrequencyType.WEEKLY,
+                            price_data=data.to_dict(),
+                            source=self.producer_name,
+                            timestamp=datetime.now()
+                        )
+                        messages.append(message)
+                        
+                        logging.info(f"[{self.producer_name}] 生产周线数据: {data.symbol} "
+                                   f"收盘价: ${data.close:.2f}, 周期: {data.timestamp.strftime('%Y-%m-%d')}")
+                    else:
+                        logging.warning(f"[{self.producer_name}] 未获取到 {symbol} 的周线数据")
+                        
+                except Exception as e:
+                    logging.error(f"[{self.producer_name}] 处理标的 {symbol_info.get('symbol')} 失败: {e}")
+                    continue
+        
+        except Exception as e:
+            logging.error(f"[{self.producer_name}] 生产美股周线数据失败: {e}")
+        
+        logging.info(f"[{self.producer_name}] 生产完成，共生成 {len(messages)} 条周线数据")
+        return messages
+    
+    def _get_us_stock_symbols(self, frequency: str) -> List[dict]:
+        """获取美股标的列表"""
+        all_symbols = self._get_symbols_by_frequency(frequency, 'stocks')
+        us_stock_symbols = []
+        
+        for symbol_info in all_symbols:
+            market = symbol_info.get('market', '')
+            symbol = symbol_info.get('symbol', '')
+            if market in ['US', 'NASDAQ', 'NYSE'] or self._is_us_stock_symbol(symbol):
+                us_stock_symbols.append({
+                    'symbol': symbol,
+                    'market': 'US',
+                    'name': symbol_info.get('name', symbol),
+                    'threshold': symbol_info.get('threshold', 2.0)
+                })
+        
+        return us_stock_symbols
+    
+    def _is_us_stock_symbol(self, symbol: str) -> bool:
+        """判断是否为美股符号"""
+        if len(symbol) <= 5 and symbol.isalpha() and symbol.isupper():
+            return True
+        return False
+    
+    def _get_symbols_by_frequency(self, frequency: str, asset_type: str):
+        """获取指定频率和资产类型的标的"""
+        return MONITOR_CONFIG.get(frequency, {}).get(asset_type, [])
+
+
+class USStockExtendedHoursProducer(BaseProducer):
+    """美股盘前盘后数据生产者"""
+    
+    def __init__(self):
+        super().__init__("USStockExtendedHoursProducer")
+        self.us_stock_fetcher = USStockYfFetcher(API_CONFIG)
+    
+    def create_trigger(self) -> CronTrigger:
+        """
+        创建盘前盘后调度触发器
+        盘前：北京时间晚上7-9点
+        盘后：北京时间凌晨4-6点
+        """
+        return CronTrigger(
+            hour='19-21,4-6',  # 盘前和盘后时间段
+            minute='*/10',      # 每10分钟
+            day_of_week='mon-fri'
+        )
+    
+    async def produce_data(self) -> List[PriceDataMessage]:
+        """生产美股盘前盘后数据"""
+        messages = []
+        
+        try:
+            # 获取美股标的
+            us_stock_symbols = self._get_us_stock_symbols('minute')
+            
+            if not us_stock_symbols:
+                logging.warning(f"[{self.producer_name}] 未找到美股标的配置")
+                return messages
+            
+            # 获取实时数据（在盘前盘后时间段会包含扩展交易数据）
+            stock_data = await self.us_stock_fetcher.fetch_realtime_data(us_stock_symbols)
+            
+            for data in stock_data:
+                if data:
                     message = PriceDataMessage(
                         symbol=data.symbol,
                         market='US',
-                        frequency=frequency,
-                        price_data=data.to_dict(),
-                        source=f"{self.producer_name}_Historical"
-                    )
-                    historical_messages.append(message)
-            
-            return historical_messages
-            
-        except Exception as e:
-            logging.error(f"[{self.producer_name}] 生产美股历史数据失败: {e}")
-            return []
-    
-    def _convert_frequency(self, frequency: FrequencyType) -> str:
-        """转换频率格式"""
-        frequency_map = {
-            FrequencyType.MINUTE: '1m',
-            FrequencyType.DAILY: '1d',
-            FrequencyType.WEEKLY: '1w'
-        }
-        return frequency_map.get(frequency, '1d')
-    
-    async def get_extended_hours_data(self, symbols: List[str]) -> List[PriceDataMessage]:
-        """获取美股盘前盘后数据"""
-        messages = []
-        try:
-            for symbol in symbols:
-                # 使用yfinance获取盘前盘后数据
-                extended_data = await self.us_stock_fetcher.get_extended_hours_data(symbol)
-                if extended_data:
-                    message = PriceDataMessage(
-                        symbol=symbol,
-                        market='US',
                         frequency=FrequencyType.MINUTE,
-                        price_data=extended_data.to_dict(),
-                        source=f"{self.producer_name}_Extended"
+                        price_data=data.to_dict(),
+                        source=self.producer_name,
+                        timestamp=datetime.now(),
+                        extra_info={'session': 'extended'}  # 标记为扩展交易时段
                     )
                     messages.append(message)
-        
+                    logging.info(f"[{self.producer_name}] 生产盘前盘后数据: {data.symbol} ${data.close:.2f}")
+            
+            logging.info(f"[{self.producer_name}] 生产完成，共生成 {len(messages)} 条盘前盘后数据")
+            
         except Exception as e:
-            logging.error(f"[{self.producer_name}] 获取盘前盘后数据失败: {e}")
+            logging.error(f"[{self.producer_name}] 生产美股盘前盘后数据失败: {e}")
         
         return messages
+    
+    def _get_us_stock_symbols(self, frequency: str) -> List[dict]:
+        """获取美股标的列表"""
+        all_symbols = self._get_symbols_by_frequency(frequency, 'stocks')
+        us_stock_symbols = []
+        
+        for symbol_info in all_symbols:
+            market = symbol_info.get('market', '')
+            symbol = symbol_info.get('symbol', '')
+            if market in ['US', 'NASDAQ', 'NYSE'] or self._is_us_stock_symbol(symbol):
+                us_stock_symbols.append({
+                    'symbol': symbol,
+                    'market': 'US',
+                    'name': symbol_info.get('name', symbol),
+                    'threshold': symbol_info.get('threshold', 2.0)
+                })
+        
+        return us_stock_symbols
+    
+    def _is_us_stock_symbol(self, symbol: str) -> bool:
+        """判断是否为美股符号"""
+        if len(symbol) <= 5 and symbol.isalpha() and symbol.isupper():
+            return True
+        return False
+    
+    def _get_symbols_by_frequency(self, frequency: str, asset_type: str):
+        """获取指定频率和资产类型的标的"""
+        return MONITOR_CONFIG.get(frequency, {}).get(asset_type, [])

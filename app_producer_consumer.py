@@ -4,7 +4,11 @@ import sys
 from datetime import datetime
 
 from core.producers.astock_producer import AStockProducer
-from core.producers.usstock_producer import USStockProducer
+from core.producers.usstock_producer import (
+    USStockMinuteProducer, 
+    USStockDailyProducer, 
+    USStockWeeklyProducer
+)
 from core.producers.crypto_producer import CryptoProducer
 from core.consumers.volatility_consumer import VolatilityConsumer
 from core.consumers.notification_consumer import NotificationConsumer
@@ -23,23 +27,47 @@ class ProducerConsumerApp:
 
         # 配置日志
         logging.basicConfig(
-            filename='app.log',
-            level=logging.DEBUG,
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            level=logging.INFO,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            handlers=[
+                logging.FileHandler('app.log', encoding='utf-8'),
+                logging.StreamHandler(sys.stdout)
+            ]
         )
 
-    def setup_producers(self):
-        """设置生产者"""
+    def setup_producers(self, run_immediately: bool = True, ignore_schedule: bool = False):
+        """设置生产者
+        
+        Args:
+            run_immediately: 是否在启动时立即执行一次
+            ignore_schedule: 是否忽略调度，只执行一次
+        """
         # A股数据生产者
-        # a_stock_producer = AStockProducer()
+        # a_stock_producer = AStockProducer(run_immediately=run_immediately, ignore_schedule=ignore_schedule)
         # self.producers.append(a_stock_producer)
 
-        # 美股数据生产者
-        us_stock_producer = USStockProducer()
-        self.producers.append(us_stock_producer)
+        # 美股数据生产者 - 分频率
+        minute_producer = USStockMinuteProducer(
+            interval_minutes=5,
+            run_immediately=run_immediately, 
+            ignore_schedule=ignore_schedule
+        )
+        self.producers.append(minute_producer)
+
+        daily_producer = USStockDailyProducer(
+            run_immediately=run_immediately,
+            ignore_schedule=ignore_schedule
+        )
+        self.producers.append(daily_producer)
+
+        weekly_producer = USStockWeeklyProducer(
+            run_immediately=run_immediately, 
+            ignore_schedule=ignore_schedule
+        )
+        self.producers.append(weekly_producer)
 
         # 加密货币数据生产者
-        # crypto_producer = CryptoProducer()
+        # crypto_producer = CryptoProducer(run_immediately=run_immediately, ignore_schedule=ignore_schedule)
         # self.producers.append(crypto_producer)
 
         print("生产者设置完成")
@@ -60,11 +88,18 @@ class ProducerConsumerApp:
 
         print("消费者设置完成")
 
-    def start_system(self):
-        """启动系统"""
+    def start_system(self, run_immediately: bool = True, ignore_schedule: bool = False):
+        """启动系统
+        
+        Args:
+            run_immediately: 是否在启动时立即执行一次生产任务
+            ignore_schedule: 是否忽略调度，只执行一次
+        """
         welcome_str = f"\n{'=' * 50}\n启动生产者-消费者模式市场监控系统\n{'=' * 50}"
         logging.info(welcome_str)
         print(welcome_str)
+        
+        print(f"运行模式: 立即执行={run_immediately}, 忽略调度={ignore_schedule}")
 
         self.is_running = True
 
@@ -73,7 +108,7 @@ class ProducerConsumerApp:
         signal.signal(signal.SIGTERM, self.signal_handler)
 
         # 设置生产者和消费者
-        self.setup_producers()
+        self.setup_producers(run_immediately=run_immediately, ignore_schedule=ignore_schedule)
         self.setup_consumers()
 
         # 启动消费者
@@ -82,12 +117,7 @@ class ProducerConsumerApp:
 
         # 启动生产者
         for producer in self.producers:
-            # if isinstance(producer, CryptoProducer):
-            #     # 加密货币生产者使用WebSocket
-            #     producer.start_websocket_production()
-            # else:
-            # 其他生产者使用轮询
-            producer.start_production(interval=60)  # 60秒间隔
+            producer.start_production()
 
         # 发送系统启动事件
         startup_message = SystemEventMessage(
@@ -96,6 +126,8 @@ class ProducerConsumerApp:
                 "timestamp": datetime.now().isoformat(),
                 "producers": [p.producer_name for p in self.producers],
                 "consumers": [c.consumer_name for c in self.consumers],
+                "run_immediately": run_immediately,
+                "ignore_schedule": ignore_schedule
             },
             source="ProducerConsumerApp",
         )
@@ -135,25 +167,40 @@ class ProducerConsumerApp:
 
         logging.info("系统已完全停止")
 
-    def run(self):
-        """运行应用"""
+    def run(self, run_immediately: bool = True, ignore_schedule: bool = False):
+        """运行应用
+        
+        Args:
+            run_immediately: 是否在启动时立即执行一次
+            ignore_schedule: 是否忽略调度，只执行一次
+        """
         try:
-            self.start_system()
-
-            # 保持主线程运行
-            import time
-
-            while self.is_running:
-                time.sleep(1)
+            self.start_system(run_immediately=run_immediately, ignore_schedule=ignore_schedule)
 
         except KeyboardInterrupt:
             print("\n用户请求停止系统...")
-            self.stop_system()
         except Exception as e:
             logging.error(f"系统运行异常: {e}")
+        finally:
             self.stop_system()
 
 
 if __name__ == "__main__":
+    import argparse
+    
+    # 命令行参数解析
+    parser = argparse.ArgumentParser(description='市场监控系统')
+    parser.add_argument('--no-immediate', action='store_true', default=False,
+                       help='不立即执行生产任务')
+    parser.add_argument('--once', action='store_true', default=False,
+                       help='只执行一次，忽略调度')
+    
+    args = parser.parse_args()
+    
     app = ProducerConsumerApp()
-    app.run()
+    
+    # 根据命令行参数设置运行模式
+    run_immediately = not args.no_immediate
+    ignore_schedule = args.once
+    
+    app.run(run_immediately=run_immediately, ignore_schedule=ignore_schedule)

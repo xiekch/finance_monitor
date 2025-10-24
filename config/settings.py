@@ -52,6 +52,8 @@ MONITOR_CONFIG = {
             {'name': '沪深300', 'symbol': '000300', 'market': 'SH', 'threshold': 3.0},
             {'name': '创业板指', 'symbol': '399006', 'market': 'SZ', 'threshold': 4.0},
             {'name': '纳斯达克', 'symbol': 'NDX', 'market': 'US', 'threshold': 2.5},
+            {'name': '苹果', 'symbol': 'AAPL', 'market': 'US', 'threshold': 2.0},
+            {'name': '特斯拉', 'symbol': 'TSLA', 'market': 'US', 'threshold': 2.0},   
         ],
         'crypto': [
             {'name': 'Bitcoin', 'symbol': 'BTCUSDT', 'market': 'CRYPTO', 'threshold': 8.0},
