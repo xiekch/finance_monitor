@@ -3,6 +3,7 @@ from typing import Dict, Any
 from .base_consumer import BaseConsumer
 from core.message_types import BaseMessage, VolatilityAlertMessage, SystemEventMessage, MessageType
 from core.notifiers.wechat_notifier import WeChatNotifier
+import logging
 
 class NotificationConsumer(BaseConsumer):
     """通知发送消费者"""
@@ -43,9 +44,9 @@ class NotificationConsumer(BaseConsumer):
         # 发送通知
         success = self.wechat_notifier.send_alert(alert)
         if success:
-            print(f"[{self.consumer_name}] 告警通知发送成功: {alert.name}")
+            logging.info(f"[{self.consumer_name}] 告警通知发送成功: {alert.name}")
         else:
-            print(f"[{self.consumer_name}] 告警通知发送失败: {alert.name}")
+            logging.error(f"[{self.consumer_name}] 告警通知发送失败: {alert.name}")
     
     def _handle_system_event(self, message: BaseMessage):
         """处理系统事件"""
@@ -54,9 +55,9 @@ class NotificationConsumer(BaseConsumer):
         
         if event_type == 'system_start':
             self.wechat_notifier.send_test_message()
-            print(f"[{self.consumer_name}] 系统启动通知已发送")
+            logging.info(f"[{self.consumer_name}] 系统启动通知已发送")
         elif event_type == 'system_shutdown':
             # 发送系统关闭通知
             shutdown_message = f"🛑 市场监控系统已关闭\n时间: {event_data.get('timestamp', 'N/A')}"
             self.wechat_notifier._send_wecom_message(shutdown_message)
-            print(f"[{self.consumer_name}] 系统关闭通知已发送")
+            logging.info(f"[{self.consumer_name}] 系统关闭通知已发送")

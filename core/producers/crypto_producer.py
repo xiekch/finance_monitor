@@ -1,7 +1,7 @@
 import asyncio
 from typing import List
 from datetime import datetime
-
+import logging
 from .base_producer import BaseProducer
 from core.message_types import PriceDataMessage, FrequencyType
 from core.fetchers.crypto_fetcher import CryptoFetcher
@@ -36,7 +36,8 @@ class CryptoProducer(BaseProducer):
                     messages.append(message)
         
         except Exception as e:
-            print(f"[{self.producer_name}] 生产加密货币数据失败: {e}")
+            logging.error(f"[{self.producer_name}] 生产加密货币数据失败: {e}")
+            raise e
         
         return messages
     

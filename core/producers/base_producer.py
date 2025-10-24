@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List
 from core.message_queue import mq
 from core.message_types import BaseMessage
+import logging
 
 class BaseProducer(ABC):
     """生产者基类"""
@@ -21,7 +22,7 @@ class BaseProducer(ABC):
             channel = f"channel_{message.message_type.value}"
         
         mq.publish(channel, message.to_dict())
-        print(f"[{self.producer_name}] 发布消息到 {channel}: {message.message_id}")
+        logging.info(f"[{self.producer_name}] 发布消息到 {channel}: {message.message_id}")
     
     def start_production(self, interval: int = 60):
         """开始生产数据"""
@@ -37,10 +38,10 @@ class BaseProducer(ABC):
                     for message in messages:
                         self.publish_message(message)
                     
-                    print(f"[{self.producer_name}] 本轮生产完成，生成 {len(messages)} 条消息")
+                    logging.info(f"[{self.producer_name}] 本轮生产完成，生成 {len(messages)} 条消息")
                     
                 except Exception as e:
-                    print(f"[{self.producer_name}] 生产数据失败: {e}")
+                    logging.error(f"[{self.producer_name}] 生产数据失败: {e}")
                 
                 await asyncio.sleep(interval)
         
@@ -55,9 +56,9 @@ class BaseProducer(ABC):
         thread = threading.Thread(target=run_async_loop)
         thread.daemon = True
         thread.start()
-        print(f"[{self.producer_name}] 生产者已启动，间隔: {interval}秒")
+        logging.info(f"[{self.producer_name}] 生产者已启动，间隔: {interval}秒")
     
     def stop_production(self):
         """停止生产数据"""
         self.is_running = False
-        print(f"[{self.producer_name}] 生产者已停止")
+        logging.info(f"[{self.producer_name}] 生产者已停止")

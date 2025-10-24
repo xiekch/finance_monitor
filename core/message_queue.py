@@ -1,6 +1,7 @@
 import redis
 import json
 import pickle
+import logging
 from typing import Any, Dict, Optional
 from config.settings import REDIS_CONFIG
 
@@ -29,7 +30,7 @@ class MessageQueue:
         pubsub = self.redis_client.pubsub()
         pubsub.subscribe(**{channel: callback})
         
-        print(f"开始监听频道: {channel}")
+        logging.info(f"开始监听频道: {channel}")
         for message in pubsub.listen():
             if message['type'] == 'message':
                 try:

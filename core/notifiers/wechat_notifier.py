@@ -1,5 +1,6 @@
 import requests
 import json
+import logging
 from typing import Optional
 from models.market_data import VolatilityAlert
 from config.settings import WECOM_CONFIG
@@ -55,14 +56,14 @@ class WeChatNotifier:
             )
             
             if response.status_code == 200:
-                print(f"企业微信消息发送成功: {message[:50]}...")
+                logging.info(f"企业微信消息发送成功: {message[:50]}...")
                 return True
             else:
-                print(f"企业微信消息发送失败: {response.status_code} - {response.text}")
+                logging.error(f"企业微信消息发送失败: {response.status_code} - {response.text}")
                 return False
                 
         except Exception as e:
-            print(f"企业微信消息发送异常: {e}")
+            logging.error(f"企业微信消息发送异常: {e}")
             return False
     
     def send_test_message(self) -> bool:

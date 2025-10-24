@@ -133,7 +133,7 @@ class ProducerConsumerApp:
         )
         mq.publish("channel_system_event", shutdown_message.to_dict())
 
-        print("系统已完全停止")
+        logging.info("系统已完全停止")
 
     def run(self):
         """运行应用"""
