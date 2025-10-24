@@ -12,11 +12,6 @@ from core.consumers.storage_consumer import StorageConsumer
 from core.message_queue import mq
 from core.message_types import SystemEventMessage
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-
 
 class ProducerConsumerApp:
     """基于生产者-消费者模式的市场监控应用"""
@@ -26,19 +21,26 @@ class ProducerConsumerApp:
         self.consumers = []
         self.is_running = False
 
+        # 配置日志
+        logging.basicConfig(
+            filename='app.log',
+            level=logging.DEBUG,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
+
     def setup_producers(self):
         """设置生产者"""
         # A股数据生产者
-        a_stock_producer = AStockProducer()
-        self.producers.append(a_stock_producer)
-        
-        # 美股数据生产者  
+        # a_stock_producer = AStockProducer()
+        # self.producers.append(a_stock_producer)
+
+        # 美股数据生产者
         us_stock_producer = USStockProducer()
         self.producers.append(us_stock_producer)
-        
+
         # 加密货币数据生产者
-        crypto_producer = CryptoProducer()
-        self.producers.append(crypto_producer)
+        # crypto_producer = CryptoProducer()
+        # self.producers.append(crypto_producer)
 
         print("生产者设置完成")
 
@@ -60,9 +62,9 @@ class ProducerConsumerApp:
 
     def start_system(self):
         """启动系统"""
-        print("=" * 50)
-        print("启动生产者-消费者模式市场监控系统")
-        print("=" * 50)
+        welcome_str = f"\n{'=' * 50}\n启动生产者-消费者模式市场监控系统\n{'=' * 50}"
+        logging.info(welcome_str)
+        print(welcome_str)
 
         self.is_running = True
 

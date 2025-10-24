@@ -3,6 +3,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+PROXY = True
+if PROXY:
+    os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7897'
+    os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7897'
+
 # API配置
 API_CONFIG = {
     'itick': {

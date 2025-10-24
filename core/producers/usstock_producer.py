@@ -1,7 +1,7 @@
 import asyncio
 from typing import List
 from datetime import datetime
-
+import logging
 from .base_producer import BaseProducer
 from core.message_types import PriceDataMessage, FrequencyType, MessageType
 from core.fetchers.us_stock_yf_fetcher import USStockYfFetcher
@@ -39,10 +39,10 @@ class USStockProducer(BaseProducer):
                             source=self.producer_name
                         )
                         messages.append(message)
-                        print(f"[{self.producer_name}] 生产美股数据: {data.symbol} ${data.close:.2f}")
+                        logging.info(f"[{self.producer_name}] 生产美股数据: {data.symbol} ${data.close:.2f}")
         
         except Exception as e:
-            print(f"[{self.producer_name}] 生产美股数据失败: {e}")
+            logging.error(f"[{self.producer_name}] 生产美股数据失败: {e}")
         
         return messages
     
@@ -103,7 +103,7 @@ class USStockProducer(BaseProducer):
             return historical_messages
             
         except Exception as e:
-            print(f"[{self.producer_name}] 生产美股历史数据失败: {e}")
+            logging.error(f"[{self.producer_name}] 生产美股历史数据失败: {e}")
             return []
     
     def _convert_frequency(self, frequency: FrequencyType) -> str:
@@ -133,6 +133,6 @@ class USStockProducer(BaseProducer):
                     messages.append(message)
         
         except Exception as e:
-            print(f"[{self.producer_name}] 获取盘前盘后数据失败: {e}")
+            logging.error(f"[{self.producer_name}] 获取盘前盘后数据失败: {e}")
         
         return messages

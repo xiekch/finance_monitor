@@ -1,239 +1,233 @@
 import yfinance as yf
 import asyncio
-import aiohttp
-from typing import List, Optional, Dict, Any
-from datetime import datetime
+from typing import List, Optional
+from datetime import datetime, timedelta
+from .base_fetcher import BaseFetcher
+from models.market_data import PriceData, MarketDataDB
+from core.trading_hours import TradingHoursManager
 import logging
 
-# 假设的BaseFetcher和PriceData，请根据您的实际定义调整
-from .base_fetcher import BaseFetcher
-from models.market_data import PriceData
 
 class USStockYfFetcher(BaseFetcher):
-    """
-    基于Yahoo Finance API的美股数据获取器
-    使用yfinance库免费获取数据:cite[4]:cite[7]
-    """
-    
+    """使用 yfinance 获取美股数据的获取器"""
+
     def __init__(self, api_config: dict = None):
         super().__init__(api_config or {})
-        self.logger = logging.getLogger(__name__)
-        
+        self.trading_hours_manager = TradingHoursManager()
+        self.db = MarketDataDB()
+
     async def fetch_realtime_data(self, symbols: List[dict]) -> List[PriceData]:
-        """
-        获取美股实时报价数据
-        
-        Args:
-            symbols: 股票符号列表，如 [{'symbol': 'AAPL'}, {'symbol': 'MSFT'}]
-            
-        Returns:
-            List[PriceData]: 价格数据对象列表
-        """
-        self.logger.info(f"开始获取实时数据，标的: {[s['symbol'] for s in symbols]}")
-        
-        # 将异步操作委托给线程池执行，因为yfinance是同步库
-        loop = asyncio.get_event_loop()
-        try:
-            # 获取实时报价数据:cite[1]
-            stock_data = await loop.run_in_executor(
-                None, 
-                self._fetch_realtime_sync, 
-                [s['symbol'] for s in symbols]
-            )
-            
-            results = []
-            for data in stock_data:
-                if data:
-                    price_data = self._create_price_data(data)
-                    results.append(price_data)
-                    
-            self.logger.info(f"实时数据获取完成，成功: {len(results)}/{len(symbols)}")
+        """获取美股实时数据"""
+        results = []
+
+        # 过滤出美股标的
+        us_symbols = [
+            symbol_info
+            for symbol_info in symbols
+            if symbol_info.get("market") in ["US", "NASDAQ", "NYSE"]
+        ]
+
+        if not us_symbols:
             return results
-            
-        except Exception as e:
-            self.logger.error(f"获取实时数据失败: {e}")
-            return []
 
-    async def fetch_historical_data(self, symbol: str, frequency: str = '1d', 
-                                  limit: int = 100) -> List[PriceData]:
-        """
-        获取美股历史数据
-        
-        Args:
-            symbol: 股票符号
-            frequency: 数据频率 - 1m, 5m, 15m, 1h, 1d, 1w:cite[4]
-            limit: 数据点数量限制
-            
-        Returns:
-            List[PriceData]: 历史价格数据列表
-        """
-        self.logger.info(f"获取历史数据: {symbol}, 频率: {frequency}, 限制: {limit}")
-        
-        loop = asyncio.get_event_loop()
-        try:
-            # 获取历史数据:cite[4]:cite[7]
-            history_data = await loop.run_in_executor(
-                None,
-                self._fetch_historical_sync,
-                symbol,
-                frequency,
-                limit
-            )
-            
-            historical_prices = []
-            for _, row in history_data.iterrows():
-                price_data = PriceData(
-                    symbol=symbol,
-                    market='US',
-                    timestamp=row.name.to_pydatetime(),
-                    open=float(row['Open']),
-                    high=float(row['High']),
-                    low=float(row['Low']),
-                    close=float(row['Close']),
-                    volume=float(row['Volume']),
-                    frequency=frequency
-                )
-                historical_prices.append(price_data)
-                
-            self.logger.info(f"历史数据获取完成: {symbol}, 获取到 {len(historical_prices)} 条记录")
-            return historical_prices[::-1]  # 返回时间升序排列的数据
-            
-        except Exception as e:
-            self.logger.error(f"获取历史数据失败 {symbol}: {e}")
-            return []
+        # 检查交易时间
+        market_type = "US"
+        # if self.trading_hours_manager.is_trading_time(market_type):
+            # 交易时间，从 yfinance 获取实时数据
+        realtime_results = await self._fetch_yfinance_realtime(us_symbols)
+        for result in realtime_results:
+            if isinstance(result, PriceData):
+                results.append(result)
+                logging.debug(f"result {result}")
+        # else:
+        #     # 非交易时间，从数据库获取最新数据
+        #     for symbol_info in us_symbols:
+        #         latest_data = self._get_latest_from_db(symbol_info)
+        #         if latest_data:
+        #             results.append(latest_data)
 
-    def _fetch_realtime_sync(self, symbols: List[str]) -> List[Optional[Dict]]:
-        """同步获取实时数据"""
-        try:
-            # 使用yfinance获取多个股票的实时数据:cite[4]
-            tickers = yf.Tickers(" ".join(symbols))
-            results = []
-            
-            for symbol in symbols:
-                try:
-                    ticker = tickers.tickers[symbol]
-                    info = ticker.info
-                    history = ticker.history(period="1d", interval="1m")
-                    
-                    if not history.empty:
-                        latest = history.iloc[-1]
-                        data = {
-                            'symbol': symbol,
-                            'timestamp': datetime.now(),
-                            'open': float(latest['Open']),
-                            'high': float(latest['High']),
-                            'low': float(latest['Low']),
-                            'close': float(latest['Close']),
-                            'volume': float(latest['Volume']),
-                            'info': info
-                        }
-                        results.append(data)
-                    else:
-                        # 回退到info接口
-                        data = {
-                            'symbol': symbol,
-                            'timestamp': datetime.now(),
-                            'open': info.get('open', 0),
-                            'high': info.get('dayHigh', 0),
-                            'low': info.get('dayLow', 0),
-                            'close': info.get('currentPrice', info.get('regularMarketPrice', 0)),
-                            'volume': info.get('volume', 0),
-                            'info': info
-                        }
-                        results.append(data)
-                        
-                except Exception as e:
-                    self.logger.warning(f"获取股票 {symbol} 实时数据失败: {e}")
-                    results.append(None)
-                    
-            return results
-            
-        except Exception as e:
-            self.logger.error(f"批量获取实时数据失败: {e}")
-            return [None] * len(symbols)
+        return results
 
-    def _fetch_historical_sync(self, symbol: str, frequency: str, limit: int):
-        """同步获取历史数据"""
+    async def _fetch_yfinance_realtime(self, symbols: List[dict]) -> List[PriceData]:
+        """使用 yfinance 获取实时数据"""
+        tasks = []
+        for symbol_info in symbols:
+            task = self._fetch_single_stock(symbol_info)
+            tasks.append(task)
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        return [result for result in results if isinstance(result, PriceData)]
+
+    async def _fetch_single_stock(self, symbol_info: dict) -> Optional[PriceData]:
+        """获取单只股票数据"""
         try:
+            # yfinance 的股票代码格式，如 AAPL, TSLA 等
+            symbol = symbol_info["symbol"]
+
+            # 创建 ticker 对象
             ticker = yf.Ticker(symbol)
-            
-            # 根据限制计算周期
-            period_map = {
-                100: '5d', 500: '1mo', 1000: '3mo', 
-                2000: '6mo', 3000: '1y', 'max': 'max'
-            }
-            
-            period = '5d'
-            for key, value in period_map.items():
-                if limit <= key:
-                    period = value
-                    break
-            
-            # 映射频率参数:cite[4]
-            interval_map = {
-                '1m': '1m', '5m': '5m', '15m': '15m',
-                '1h': '1h', '1d': '1d', '1w': '1wk'
-            }
-            
-            interval = interval_map.get(frequency, '1d')
-            
-            # 获取历史数据:cite[4]:cite[7]
-            history = ticker.history(period=period, interval=interval)
-            
-            if len(history) > limit:
-                history = history.tail(limit)
-                
-            return history
-            
-        except Exception as e:
-            self.logger.error(f"同步获取历史数据失败 {symbol}: {e}")
-            raise
 
-    def _create_price_data(self, data: Dict) -> PriceData:
-        """创建PriceData对象"""
-        return PriceData(
-            symbol=data['symbol'],
-            market='US',
-            timestamp=data['timestamp'],
-            open=data['open'],
-            high=data['high'],
-            low=data['low'],
-            close=data['close'],
-            volume=data['volume'],
-            frequency='1m'  # 实时数据默认为1分钟频率
-        )
+            # 获取实时数据
+            info = ticker.info
+            history = ticker.history(period="1d", interval="1m")
 
-    async def get_company_info(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """获取公司基本信息:cite[1]"""
-        loop = asyncio.get_event_loop()
-        try:
-            def sync_fetch():
-                ticker = yf.Ticker(symbol)
-                return ticker.info
-            
-            info = await loop.run_in_executor(None, sync_fetch)
-            return info
+            if history.empty:
+                logging.error(f"yfinance 未返回数据 for {symbol}")
+                return None
+
+            logging.debug(f"history {history}")
+            # 获取最新的一分钟数据
+            latest = history.iloc[-1]
+
+            return PriceData(
+                symbol=symbol,
+                market=symbol_info.get("market", "US"),
+                timestamp=datetime.now(),
+                open=float(latest["Open"]),
+                high=float(latest["High"]),
+                low=float(latest["Low"]),
+                close=float(latest["Close"]),
+                volume=int(latest["Volume"]),
+                frequency="1m"
+            )
+
         except Exception as e:
-            self.logger.error(f"获取公司信息失败 {symbol}: {e}")
+            logging.error(
+                f"yfinance 数据获取失败 {symbol_info.get('name', symbol_info['symbol'])}: {e}"
+            )
             return None
 
-    async def search_symbols(self, query: str) -> List[Dict]:
-        """搜索股票符号:cite[1]"""
-        loop = asyncio.get_event_loop()
+    def _get_latest_from_db(self, symbol_info: dict) -> Optional[PriceData]:
+        """从数据库获取最新数据"""
+        return self.db.get_latest_price(
+            symbol=symbol_info["symbol"],
+            market=symbol_info.get("market", "US"),
+            frequency="1m",
+        )
+
+    async def fetch_historical_data(
+        self, symbol: str, frequency: str = "1d", limit: int = 100
+    ) -> List[PriceData]:
+        """获取股票历史数据"""
         try:
-            def sync_search():
-                import yfinance as yf
-                # 注意: yfinance的搜索功能可能有限，这里简单实现
-                ticker = yf.Ticker(query)
-                info = ticker.info
-                return [{
-                    'symbol': info.get('symbol', query),
-                    'name': info.get('longName', ''),
-                    'exchange': info.get('exchange', '')
-                }]
-            
-            results = await loop.run_in_executor(None, sync_search)
-            return results
+            # 将频率转换为 yfinance 支持的格式
+            yf_interval = self._convert_frequency(frequency)
+            yf_period = self._get_period_for_limit(limit, frequency)
+
+            ticker = yf.Ticker(symbol)
+            history = ticker.history(period=yf_period, interval=yf_interval)
+
+            if history.empty:
+                logging.error(f"yfinance 未返回历史数据 for {symbol}")
+                return []
+
+            price_data_list = []
+            for timestamp, row in history.iterrows():
+                price_data = PriceData(
+                    symbol=symbol,
+                    market="US",
+                    timestamp=timestamp.to_pydatetime(),
+                    open=float(row["Open"]),
+                    high=float(row["High"]),
+                    low=float(row["Low"]),
+                    close=float(row["Close"]),
+                    volume=int(row["Volume"]),
+                    frequency=frequency,
+                )
+                price_data_list.append(price_data)
+
+            return price_data_list[-limit:]  # 返回指定数量的最新数据
+
         except Exception as e:
-            self.logger.error(f"搜索股票符号失败 {query}: {e}")
-            return []
+            logging.error(f"yfinance 历史数据获取失败 {symbol}: {e}")
+            # 失败时从数据库获取
+            return self._get_historical_from_db(symbol, frequency, limit)
+
+    def _convert_frequency(self, frequency: str) -> str:
+        """将频率转换为 yfinance 支持的格式"""
+        frequency_map = {
+            "1m": "1m",
+            "5m": "5m",
+            "15m": "15m",
+            "30m": "30m",
+            "1h": "1h",
+            "1d": "1d",
+            "1w": "1wk",
+            "1M": "1mo",
+        }
+        return frequency_map.get(frequency, "1d")
+
+    def _get_period_for_limit(self, limit: int, frequency: str) -> str:
+        """根据限制数量和频率确定获取数据的周期"""
+        if frequency == "1m":
+            if limit <= 390:  # 一天的交易分钟数
+                return "1d"
+            elif limit <= 780:  # 两天的交易分钟数
+                return "2d"
+            else:
+                return "5d"
+        elif frequency == "1d":
+            if limit <= 30:
+                return "1mo"
+            elif limit <= 90:
+                return "3mo"
+            elif limit <= 180:
+                return "6mo"
+            else:
+                return "1y"
+        elif frequency == "1w":
+            if limit <= 12:
+                return "1y"
+            else:
+                return "5y"
+        else:
+            return "1y"
+
+    def _get_historical_from_db(
+        self, symbol: str, frequency: str, limit: int
+    ) -> List[PriceData]:
+        """从数据库获取历史数据"""
+        end_date = datetime.now()
+
+        # 根据频率计算开始日期
+        if frequency == "1m":
+            start_date = end_date - timedelta(days=min(limit // 390 + 1, 30))
+        elif frequency == "1d":
+            start_date = end_date - timedelta(days=limit * 2)  # 多取一些以防周末
+        elif frequency == "1w":
+            start_date = end_date - timedelta(weeks=limit * 2)
+        else:
+            start_date = end_date - timedelta(days=30)
+
+        return self.db.get_historical_prices(
+            symbol=symbol,
+            market="US",
+            frequency=frequency,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+        )
+
+    async def get_stock_info(self, symbol: str) -> dict:
+        """获取股票基本信息"""
+        try:
+            ticker = yf.Ticker(symbol)
+            info = ticker.info
+
+            return {
+                "symbol": symbol,
+                "name": info.get("longName", info.get("shortName", "")),
+                "exchange": info.get("exchange", ""),
+                "currency": info.get("currency", "USD"),
+                "sector": info.get("sector", ""),
+                "industry": info.get("industry", ""),
+                "market_cap": info.get("marketCap"),
+                "pe_ratio": info.get("trailingPE"),
+                "dividend_yield": info.get("dividendYield"),
+                "fifty_two_week_high": info.get("fiftyTwoWeekHigh"),
+                "fifty_two_week_low": info.get("fiftyTwoWeekLow"),
+                "description": info.get("longBusinessSummary", ""),
+            }
+        except Exception as e:
+            logging.error(f"获取股票信息失败 {symbol}: {e}")
+            return {}

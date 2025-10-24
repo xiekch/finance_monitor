@@ -14,9 +14,6 @@ class VolatilityConsumer(BaseConsumer):
         super().__init__("VolatilityConsumer", [MessageType.PRICE_DATA])
         self.threshold_manager = ThresholdManager()
         self.volatility_analyzer = VolatilityAnalyzer(self.threshold_manager)
-        
-        # 价格缓存，用于分钟级波动计算
-        self.price_cache = {}
     
     def process_message(self, message: BaseMessage):
         """处理价格数据消息，分析波动"""
@@ -68,6 +65,5 @@ class VolatilityConsumer(BaseConsumer):
                 
                 # 发布告警消息
                 from core.message_queue import mq
-                mq.publish("channel_volatility_alert", alert_message.to_dict())
-                
+                mq.publish(f"channel_{MessageType.VOLATILITY_ALERT.value}", alert_message.to_dict())
                 print(f"[{self.consumer_name}] 发现波动告警: {alert.name} {alert.current_change:.2f}%")
