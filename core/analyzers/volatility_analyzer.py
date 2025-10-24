@@ -1,16 +1,20 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+import logging
 from datetime import datetime, timedelta
 from models.market_data import PriceData, VolatilityAlert
 from core.threshold_manager import ThresholdManager
+from models.market_data import MarketDataDB
+
 
 class VolatilityAnalyzer:
     """波动分析器"""
     
     def __init__(self, threshold_manager: ThresholdManager):
         self.threshold_manager = threshold_manager
+        self.db = MarketDataDB()
         self.price_history = {}  # 用于存储价格历史
     
-    def analyze_minute_volatility(self, current_data: PriceData) -> VolatilityAlert:
+    def analyze_minute_volatility(self, current_data: PriceData) -> Optional[VolatilityAlert]:
         """分析分钟级波动"""
         symbol_key = f"{current_data.market}_{current_data.symbol}"
         
@@ -42,29 +46,124 @@ class VolatilityAnalyzer:
         self.price_history[symbol_key] = current_data
         return None
     
-    def analyze_daily_volatility(self, historical_data: List[PriceData]) -> List[VolatilityAlert]:
+    def analyze_daily_volatility(self, current_data: PriceData) -> Optional[VolatilityAlert]:
         """分析日频波动"""
+        symbol = current_data.symbol
+        market = current_data.market
+        
+        # 获取前一个交易日的数据
+        end_date = current_data.timestamp
+        start_date = end_date - timedelta(days=2)  # 多取一天确保有数据
+        
+        try:
+            # 从数据库获取历史数据
+            historical_data = self.db.get_historical_prices(
+                symbol=symbol,
+                market=market,
+                frequency='1d',
+                start_date=start_date,
+                end_date=end_date
+            )
+            
+            if len(historical_data) < 2:
+                # 如果数据库中没有足够数据，返回None
+                return None
+            
+            # 获取最新数据和前一个交易日数据
+            latest_data = current_data
+            previous_data = historical_data[-2]  # 前一个交易日
+            
+            change_percent = self.calculate_change_percent(
+                latest_data.close, previous_data.close
+            )
+            
+            threshold = self.threshold_manager.get_threshold(symbol, 'daily')
+            
+            if abs(change_percent) >= threshold:
+                return VolatilityAlert(
+                    symbol=symbol,
+                    name=symbol,
+                    frequency='daily',
+                    current_change=change_percent,
+                    threshold=threshold,
+                    current_price=latest_data.close,
+                    previous_price=previous_data.close,
+                    timestamp=datetime.now()
+                )
+                
+        except Exception as e:
+            logging.error(f"分析日频波动时出错 {symbol}: {e}")
+            
+        return None
+    
+    def analyze_weekly_volatility(self, current_data: PriceData) -> Optional[VolatilityAlert]:
+        """分析周频波动"""
+        symbol = current_data.symbol
+        market = current_data.market
+        
+        # 获取前一周的数据
+        end_date = current_data.timestamp
+        start_date = end_date - timedelta(weeks=2)  # 多取一周确保有数据
+        
+        try:
+            # 从数据库获取历史数据
+            historical_data = self.db.get_historical_prices(
+                symbol=symbol,
+                market=market,
+                frequency='1w',
+                start_date=start_date,
+                end_date=end_date
+            )
+            
+            if len(historical_data) < 2:
+                # 如果数据库中没有足够数据，返回None
+                return None
+            
+            # 获取最新数据和前一周数据
+            latest_data = current_data
+            previous_data = historical_data[-2]  # 前一周
+            
+            change_percent = self.calculate_change_percent(
+                latest_data.close, previous_data.close
+            )
+            
+            threshold = self.threshold_manager.get_threshold(symbol, 'weekly')
+            
+            if abs(change_percent) >= threshold:
+                return VolatilityAlert(
+                    symbol=symbol,
+                    name=symbol,
+                    frequency='weekly',
+                    current_change=change_percent,
+                    threshold=threshold,
+                    current_price=latest_data.close,
+                    previous_price=previous_data.close,
+                    timestamp=datetime.now()
+                )
+                
+        except Exception as e:
+            logging.error(f"分析周频波动时出错 {symbol}: {e}")
+            
+        return None
+    
+    def analyze_all_frequencies(self, current_data: PriceData) -> List[VolatilityAlert]:
+        """分析所有频率的波动"""
         alerts = []
-        if len(historical_data) < 2:
-            return alerts
         
-        latest = historical_data[-1]
-        previous = historical_data[-2]
+        # 分钟级波动分析
+        minute_alert = self.analyze_minute_volatility(current_data)
+        if minute_alert:
+            alerts.append(minute_alert)
         
-        change_percent = self.calculate_change_percent(latest.close, previous.close)
-        threshold = self.threshold_manager.get_threshold(latest.symbol, 'daily')
+        # 日频波动分析
+        daily_alert = self.analyze_daily_volatility(current_data)
+        if daily_alert:
+            alerts.append(daily_alert)
         
-        if abs(change_percent) >= threshold:
-            alerts.append(VolatilityAlert(
-                symbol=latest.symbol,
-                name=latest.symbol,
-                frequency='daily', 
-                current_change=change_percent,
-                threshold=threshold,
-                current_price=latest.close,
-                previous_price=previous.close,
-                timestamp=datetime.now()
-            ))
+        # 周频波动分析
+        weekly_alert = self.analyze_weekly_volatility(current_data)
+        if weekly_alert:
+            alerts.append(weekly_alert)
         
         return alerts
     

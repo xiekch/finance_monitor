@@ -37,13 +37,9 @@ class VolatilityConsumer(BaseConsumer):
             if price_message.frequency == FrequencyType.MINUTE:
                 alert = self.volatility_analyzer.analyze_minute_volatility(price_data)
             elif price_message.frequency == FrequencyType.DAILY:
-                alert = self.volatility_analyzer.analyze_daily_volatility(
-                    price_data.symbol, price_data.market
-                )
+                alert = self.volatility_analyzer.analyze_daily_volatility(price_data)
             elif price_message.frequency == FrequencyType.WEEKLY:
-                alert = self.volatility_analyzer.analyze_weekly_volatility(
-                    price_data.symbol, price_data.market
-                )
+                alert = self.volatility_analyzer.analyze_weekly_volatility(price_data)
             else:
                 alert = None
             
