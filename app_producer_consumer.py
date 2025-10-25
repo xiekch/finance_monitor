@@ -2,6 +2,8 @@ import logging
 import signal
 import sys
 from datetime import datetime
+import time
+import asyncio
 
 from core.producers.astock_producer import AStockProducer
 from core.producers.usstock_producer import (
@@ -27,7 +29,7 @@ class ProducerConsumerApp:
 
         # 配置日志
         logging.basicConfig(
-            level=logging.INFO,
+            level=logging.DEBUG,
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             handlers=[
                 logging.FileHandler('app.log', encoding='utf-8'),
@@ -176,6 +178,29 @@ class ProducerConsumerApp:
         """
         try:
             self.start_system(run_immediately=run_immediately, ignore_schedule=ignore_schedule)
+
+            # 如果忽略调度，等待生产任务完成后自动停止
+            if ignore_schedule:
+                print("忽略调度模式，等待生产任务完成后自动停止...")
+                # 运行异步等待
+                async def wait_and_stop():
+                    await asyncio.sleep(60)
+                    print("生产任务完成，自动停止系统...")
+                    self.stop_system()
+                
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(wait_and_stop())
+                loop.close()
+            else:
+                # 正常调度模式，保持运行直到接收到停止信号
+                print("正常调度模式，系统持续运行中...")
+                try:
+                    # 保持主线程运行
+                    while self.is_running:
+                        time.sleep(1)
+                except KeyboardInterrupt:
+                    print("\n用户请求停止系统...")
 
         except KeyboardInterrupt:
             print("\n用户请求停止系统...")
