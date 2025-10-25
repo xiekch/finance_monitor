@@ -6,11 +6,9 @@ import time
 import asyncio
 
 from core.producers.astock_producer import AStockProducer
-from core.producers.usstock_producer import (
-    USStockMinuteProducer,
-    USStockDailyProducer,
-    USStockWeeklyProducer,
-)
+from core.producers.usstock_minute_producer import USStockMinuteProducer
+from core.producers.usstock_weekly_producer import USStockWeeklyProducer
+from core.producers.usstock_daily_producer import USStockDailyProducer
 from core.producers.crypto_producer import CryptoProducer
 from core.consumers.volatility_consumer import VolatilityConsumer
 from core.consumers.notification_consumer import NotificationConsumer
