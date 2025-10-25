@@ -27,7 +27,7 @@ class VolatilityAnalyzer:
             
             # 检查阈值
             threshold = self.threshold_manager.get_threshold(
-                current_data.symbol, 'minute'
+                current_data.symbol, 'minute', market=current_data.market
             )
             
             if abs(change_percent) >= threshold:
@@ -52,7 +52,7 @@ class VolatilityAnalyzer:
         market = current_data.market
         
         # 获取前一个交易日的数据
-        end_date = current_data.timestamp
+        end_date = datetime.fromisoformat(current_data.timestamp)
         start_date = end_date - timedelta(days=2)  # 多取一天确保有数据
         
         try:
@@ -77,7 +77,7 @@ class VolatilityAnalyzer:
                 latest_data.close, previous_data.close
             )
             
-            threshold = self.threshold_manager.get_threshold(symbol, 'daily')
+            threshold = self.threshold_manager.get_threshold(symbol, 'daily', market=current_data.market)
             
             if abs(change_percent) >= threshold:
                 return VolatilityAlert(
@@ -127,7 +127,7 @@ class VolatilityAnalyzer:
                 latest_data.close, previous_data.close
             )
             
-            threshold = self.threshold_manager.get_threshold(symbol, 'weekly')
+            threshold = self.threshold_manager.get_threshold(symbol, 'weekly', market=current_data.market)
             
             if abs(change_percent) >= threshold:
                 return VolatilityAlert(
