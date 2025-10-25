@@ -46,10 +46,7 @@ class USStockMinuteProducer(BaseProducer):
             for data in stock_data:
                 if data:  # 确保数据有效
                     message = PriceDataMessage(
-                        symbol=data.symbol,
-                        market='US',
-                        frequency=FrequencyType.MINUTE,
-                        price_data=data.to_dict(),
+                        payload=data.to_dict(),
                         source=self.producer_name,
                         timestamp=datetime.now()
                     )
@@ -115,77 +112,70 @@ class USStockDailyProducer(BaseProducer):
         """生产美股日级数据"""
         messages = []
         
-        try:
-            # 获取美股标的
-            us_stock_symbols = self._get_us_stock_symbols('daily')
-            
-            if not us_stock_symbols:
-                logging.warning(f"[{self.producer_name}] 未找到美股标的配置")
-                return messages
-            
-            logging.info(f"[{self.producer_name}] 开始处理 {len(us_stock_symbols)} 个美股标的")
-            
-            # 设置日期范围 - 获取最近7天的数据确保包含交易日
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=7)
-            
-            for symbol_info in us_stock_symbols:
-                try:
-                    symbol = symbol_info['symbol']
-                    
-                    # 使用新的接口获取日线数据
-                    historical_data = await self.us_stock_fetcher.fetch_historical_data(
-                        symbol=symbol,
-                        frequency='1d',
-                        start_date=start_date,
-                        end_date=end_date
-                    )
-                    
-                    if historical_data and len(historical_data) > 0:
-                        # 处理所有历史数据
-                        for i, data in enumerate(historical_data):
-                            data_date = data.timestamp.date()
-                            today = datetime.now().date()
-                            
-                            # 判断消息类型：最后一条为实时数据，其他为历史数据
-                            if i == len(historical_data) - 1:
-                                # 最后一条数据作为实时价格数据
-                                message_type = MessageType.PRICE_DATA
-                                log_prefix = "生产日线数据"
-                                
-                                # 如果数据日期不是今天，说明是历史数据
-                                if data_date != today:
-                                    logging.info(f"[{self.producer_name}] {symbol} 获取到历史数据作为最新数据，日期: {data_date}")
-                            else:
-                                # 其他数据作为历史价格数据
-                                message_type = MessageType.HISTORICAL_PRICE_DATA
-                                log_prefix = "生产历史日线数据"
-                            
-                            message = PriceDataMessage(
-                                symbol=data.symbol,
-                                market='US',
-                                frequency=FrequencyType.DAILY,
-                                price_data=data.to_dict(),
-                                source=self.producer_name,
-                                timestamp=data.timestamp,
-                                message_type=message_type
-                            )
-                            messages.append(message)
-                            
-                            logging.info(f"[{self.producer_name}] {log_prefix}: {data.symbol} "
-                                       f"收盘价: ${data.close:.2f}, 日期: {data_date}, 类型: {message_type.value}")
-                        
-                        logging.info(f"[{self.producer_name}] {symbol} 共处理 {len(historical_data)} 条数据")
-                    else:
-                        logging.warning(f"[{self.producer_name}] 未获取到 {symbol} 的日线数据")
-                        
-                except Exception as e:
-                    logging.error(f"[{self.producer_name}] 处理标的 {symbol_info.get('symbol')} 失败: {e}")
-                    continue
+        # 获取美股标的
+        us_stock_symbols = self._get_us_stock_symbols('daily')
         
-        except Exception as e:
-            logging.error(f"[{self.producer_name}] 生产美股日线数据失败: {e}")
+        if not us_stock_symbols:
+            logging.warning(f"[{self.producer_name}] 未找到美股标的配置")
+            return messages
         
+        logging.info(f"[{self.producer_name}] 开始处理 {len(us_stock_symbols)} 个美股标的")
+        
+        # 设置日期范围 - 获取最近7天的数据确保包含交易日
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=7)
+        
+        for symbol_info in us_stock_symbols:
+            try:
+                symbol = symbol_info['symbol']
+                
+                # 使用新的接口获取日线数据
+                historical_data = await self.us_stock_fetcher.fetch_historical_data(
+                    symbol=symbol,
+                    frequency='1d',
+                    start_date=start_date,
+                    end_date=end_date
+                )
+                
+                if historical_data and len(historical_data) > 0:
+                    # 处理所有历史数据
+                    for i, data in enumerate(historical_data):
+                        data_date = data.timestamp.date()
+                        today = datetime.now().date()
+                        
+                        # 判断消息类型：最后一条为实时数据，其他为历史数据
+                        if i == len(historical_data) - 1:
+                            # 最后一条数据作为实时价格数据
+                            message_type = MessageType.PRICE_DATA
+                            log_prefix = "生产日线数据"
+                            
+                            # 如果数据日期不是今天，说明是历史数据
+                            if data_date != today:
+                                logging.info(f"[{self.producer_name}] {symbol} 获取到历史数据作为最新数据，日期: {data_date}")
+                        else:
+                            # 其他数据作为历史价格数据
+                            message_type = MessageType.HISTORICAL_PRICE_DATA
+                            log_prefix = "生产历史日线数据"
+                        
+                        message = PriceDataMessage(
+                            payload=data.to_dict(),
+                            source=self.producer_name,
+                            timestamp=data.timestamp,
+                            message_type=message_type
+                        )
+                        messages.append(message)
+                        
+                        logging.info(f"[{self.producer_name}] {log_prefix}: {data.symbol} "
+                                    f"收盘价: ${data.close:.2f}, 日期: {data_date}, 类型: {message_type.value}")
+                    
+                    logging.info(f"[{self.producer_name}] {symbol} 共处理 {len(historical_data)} 条数据")
+                else:
+                    logging.warning(f"[{self.producer_name}] 未获取到 {symbol} 的日线数据")
+                    
+            except Exception as e:
+                logging.error(f"[{self.producer_name}] 处理标的 {symbol_info.get('symbol')} 失败: {e}")
+                continue
+
         # 统计不同类型消息的数量
         price_data_count = sum(1 for msg in messages if msg.message_type == MessageType.PRICE_DATA)
         historical_data_count = sum(1 for msg in messages if msg.message_type == MessageType.HISTORICAL_PRICE_DATA)
@@ -239,10 +229,7 @@ class USStockDailyProducer(BaseProducer):
                                 log_prefix = "生产相关日期历史数据"
                             
                             message = PriceDataMessage(
-                                symbol=data.symbol,
-                                market='US',
-                                frequency=FrequencyType.DAILY,
-                                price_data=data.to_dict(),
+                                payload=data.to_dict(),
                                 source=f"{self.producer_name}_Historical",
                                 timestamp=data.timestamp,
                                 message_type=message_type
@@ -342,10 +329,7 @@ class USStockWeeklyProducer(BaseProducer):
                         data = historical_data[0]
                         
                         message = PriceDataMessage(
-                            symbol=data.symbol,
-                            market='US',
-                            frequency=FrequencyType.WEEKLY,
-                            price_data=data.to_dict(),
+                            payload=data.to_dict(),
                             source=self.producer_name,
                             timestamp=datetime.now()
                         )

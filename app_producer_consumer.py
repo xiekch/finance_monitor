@@ -7,9 +7,9 @@ import asyncio
 
 from core.producers.astock_producer import AStockProducer
 from core.producers.usstock_producer import (
-    USStockMinuteProducer, 
-    USStockDailyProducer, 
-    USStockWeeklyProducer
+    USStockMinuteProducer,
+    USStockDailyProducer,
+    USStockWeeklyProducer,
 )
 from core.producers.crypto_producer import CryptoProducer
 from core.consumers.volatility_consumer import VolatilityConsumer
@@ -32,14 +32,16 @@ class ProducerConsumerApp:
             level=logging.DEBUG,
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             handlers=[
-                logging.FileHandler('app.log', encoding='utf-8'),
-                logging.StreamHandler(sys.stdout)
-            ]
+                logging.FileHandler("app.log", encoding="utf-8"),
+                logging.StreamHandler(sys.stdout),
+            ],
         )
 
-    def setup_producers(self, run_immediately: bool = True, ignore_schedule: bool = False):
+    def setup_producers(
+        self, run_immediately: bool = True, ignore_schedule: bool = False
+    ):
         """设置生产者
-        
+
         Args:
             run_immediately: 是否在启动时立即执行一次
             ignore_schedule: 是否忽略调度，只执行一次
@@ -51,20 +53,18 @@ class ProducerConsumerApp:
         # 美股数据生产者 - 分频率
         minute_producer = USStockMinuteProducer(
             interval_minutes=5,
-            run_immediately=run_immediately, 
-            ignore_schedule=ignore_schedule
+            run_immediately=run_immediately,
+            ignore_schedule=ignore_schedule,
         )
         # self.producers.append(minute_producer)
 
         daily_producer = USStockDailyProducer(
-            run_immediately=run_immediately,
-            ignore_schedule=ignore_schedule
+            run_immediately=run_immediately, ignore_schedule=ignore_schedule
         )
         self.producers.append(daily_producer)
 
         weekly_producer = USStockWeeklyProducer(
-            run_immediately=run_immediately, 
-            ignore_schedule=ignore_schedule
+            run_immediately=run_immediately, ignore_schedule=ignore_schedule
         )
         # self.producers.append(weekly_producer)
 
@@ -92,7 +92,7 @@ class ProducerConsumerApp:
 
     def start_system(self, run_immediately: bool = True, ignore_schedule: bool = False):
         """启动系统
-        
+
         Args:
             run_immediately: 是否在启动时立即执行一次生产任务
             ignore_schedule: 是否忽略调度，只执行一次
@@ -100,7 +100,7 @@ class ProducerConsumerApp:
         welcome_str = f"\n{'=' * 50}\n启动生产者-消费者模式市场监控系统\n{'=' * 50}"
         logging.info(welcome_str)
         print(welcome_str)
-        
+
         print(f"运行模式: 立即执行={run_immediately}, 忽略调度={ignore_schedule}")
 
         self.is_running = True
@@ -110,7 +110,9 @@ class ProducerConsumerApp:
         signal.signal(signal.SIGTERM, self.signal_handler)
 
         # 设置生产者和消费者
-        self.setup_producers(run_immediately=run_immediately, ignore_schedule=ignore_schedule)
+        self.setup_producers(
+            run_immediately=run_immediately, ignore_schedule=ignore_schedule
+        )
         self.setup_consumers()
 
         # 启动消费者
@@ -123,13 +125,15 @@ class ProducerConsumerApp:
 
         # 发送系统启动事件
         startup_message = SystemEventMessage(
-            event_type="system_start",
-            event_data={
-                "timestamp": datetime.now().isoformat(),
-                "producers": [p.producer_name for p in self.producers],
-                "consumers": [c.consumer_name for c in self.consumers],
-                "run_immediately": run_immediately,
-                "ignore_schedule": ignore_schedule
+            payload={
+                "event_type": "system_start",
+                "event_data": {
+                    "timestamp": datetime.now().isoformat(),
+                    "producers": [p.producer_name for p in self.producers],
+                    "consumers": [c.consumer_name for c in self.consumers],
+                    "run_immediately": run_immediately,
+                    "ignore_schedule": ignore_schedule,
+                },
             },
             source="ProducerConsumerApp",
         )
@@ -171,23 +175,26 @@ class ProducerConsumerApp:
 
     def run(self, run_immediately: bool = True, ignore_schedule: bool = False):
         """运行应用
-        
+
         Args:
             run_immediately: 是否在启动时立即执行一次
             ignore_schedule: 是否忽略调度，只执行一次
         """
         try:
-            self.start_system(run_immediately=run_immediately, ignore_schedule=ignore_schedule)
+            self.start_system(
+                run_immediately=run_immediately, ignore_schedule=ignore_schedule
+            )
 
             # 如果忽略调度，等待生产任务完成后自动停止
             if ignore_schedule:
                 print("忽略调度模式，等待生产任务完成后自动停止...")
+
                 # 运行异步等待
                 async def wait_and_stop():
                     await asyncio.sleep(60)
                     print("生产任务完成，自动停止系统...")
                     self.stop_system()
-                
+
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 loop.run_until_complete(wait_and_stop())
@@ -212,20 +219,22 @@ class ProducerConsumerApp:
 
 if __name__ == "__main__":
     import argparse
-    
+
     # 命令行参数解析
-    parser = argparse.ArgumentParser(description='市场监控系统')
-    parser.add_argument('--no-immediate', action='store_true', default=False,
-                       help='不立即执行生产任务')
-    parser.add_argument('--once', action='store_true', default=False,
-                       help='只执行一次，忽略调度')
-    
+    parser = argparse.ArgumentParser(description="市场监控系统")
+    parser.add_argument(
+        "--no-immediate", action="store_true", default=False, help="不立即执行生产任务"
+    )
+    parser.add_argument(
+        "--once", action="store_true", default=False, help="只执行一次，忽略调度"
+    )
+
     args = parser.parse_args()
-    
+
     app = ProducerConsumerApp()
-    
+
     # 根据命令行参数设置运行模式
     run_immediately = not args.no_immediate
     ignore_schedule = args.once
-    
+
     app.run(run_immediately=run_immediately, ignore_schedule=ignore_schedule)

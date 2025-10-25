@@ -15,11 +15,14 @@ class NotificationConsumer(BaseConsumer):
         ])
         self.wechat_notifier = WeChatNotifier()
     
-    def process_message(self, message: BaseMessage):
+    def process_message(self, message: Dict):
         """处理告警和系统事件消息，发送通知"""
-        if message.message_type == MessageType.VOLATILITY_ALERT:
+        message_type = MessageType(message['message_type'])
+        if message_type == MessageType.VOLATILITY_ALERT:
+            message = VolatilityAlertMessage.from_dict(message)
             self._handle_volatility_alert(message)
-        elif message.message_type == MessageType.SYSTEM_EVENT:
+        elif message_type == MessageType.SYSTEM_EVENT:
+            message = SystemEventMessage.from_dict(message)
             self._handle_system_event(message)
     
     def _handle_volatility_alert(self, message: BaseMessage):
@@ -52,7 +55,7 @@ class NotificationConsumer(BaseConsumer):
         """处理系统事件"""
         event_type = message.payload['event_type']
         event_data = message.payload['event_data']
-        
+
         if event_type == 'system_start':
             self.wechat_notifier.send_test_message()
             logging.info(f"[{self.consumer_name}] 系统启动通知已发送")

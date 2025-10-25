@@ -28,16 +28,19 @@ class MessageQueue:
     def subscribe(self, channel: str, callback):
         """订阅频道并处理消息"""
         pubsub = self.redis_client.pubsub()
-        pubsub.subscribe(**{channel: callback})
+        def message_handler(message):
+            if message['type'] == 'message':
+                # 解析 JSON 数据
+                data = json.loads(message['data'])
+                # 直接调用回调函数
+                callback(data)
         
+        # 订阅频道，传入消息处理器
+        pubsub.subscribe(**{channel: message_handler})
         logging.info(f"开始监听频道: {channel}")
         for message in pubsub.listen():
-            if message['type'] == 'message':
-                try:
-                    data = json.loads(message['data'])
-                    callback(data)
-                except Exception as e:
-                    print(f"消息处理失败: {e}")
+            # logging.info(f"forloop {message}")
+            pass
     
     def push_to_queue(self, queue_name: str, item: Dict[str, Any]):
         """推送到队列（用于任务队列）"""

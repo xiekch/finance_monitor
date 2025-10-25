@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Callable
 import threading
+import logging
 from core.message_queue import mq
 from core.message_types import BaseMessage, MessageType
 
@@ -20,29 +21,23 @@ class BaseConsumer(ABC):
         """处理消息（由子类实现）"""
         pass
     
-    def _create_message_handler(self, message_type: MessageType) -> Callable:
-        """为每种消息类型创建处理函数"""
-        def handler(data):
-            try:
-                message = BaseMessage.from_dict(data)
-                print(f"[{self.consumer_name}] 收到 {message_type.value} 消息: {message}")
-                self.process_message(message)
-            except Exception as e:
-                print(f"[{self.consumer_name}] 处理 {message_type.value} 消息失败: {e}")
-        return handler
-    
     def _subscribe_channel(self, message_type: MessageType):
         """在独立线程中订阅一个频道"""
         channel = message_type.value
-        handler = self._create_message_handler(message_type)
+        def handler(data):
+            try:
+                logging.info(f"原始数据 {data}")
+                self.process_message(data)
+            except Exception as e:
+                logging.error(f"[{self.consumer_name}] 处理 {message_type.value} 消息失败: {e}", exc_info=True)
         
-        print(f"[{self.consumer_name}] 开始订阅频道: {channel}")
+        logging.info(f"[{self.consumer_name}] 开始订阅频道: {channel}")
         mq.subscribe(channel, handler)
     
     def start_consumption(self):
         """开始消费消息"""
         if self.is_running:
-            print(f"[{self.consumer_name}] 消费者已在运行中")
+            logging.info(f"[{self.consumer_name}] 消费者已在运行中")
             return
         
         self.is_running = True
@@ -59,8 +54,8 @@ class BaseConsumer(ABC):
             thread.start()
             self.threads.append(thread)
         
-        print(f"[{self.consumer_name}] 消费者已启动，监听: {[mt.value for mt in self.message_types]}")
-        print(f"[{self.consumer_name}] 创建了 {len(self.threads)} 个订阅线程")
+        logging.info(f"[{self.consumer_name}] 消费者已启动，监听: {[mt.value for mt in self.message_types]}")
+        logging.info(f"[{self.consumer_name}] 创建了 {len(self.threads)} 个订阅线程")
     
     def stop_consumption(self):
         """停止消费消息"""
@@ -71,4 +66,4 @@ class BaseConsumer(ABC):
         #     channel = message_type.value
         #     mq.unsubscribe(channel)  # 假设 mq 有 unsubscribe 方法
         
-        print(f"[{self.consumer_name}] 消费者已停止")
+        logging.info(f"[{self.consumer_name}] 消费者已停止")

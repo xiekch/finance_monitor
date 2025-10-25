@@ -167,6 +167,7 @@ class USStockYfFetcher(BaseFetcher):
                     frequency=frequency,
                 )
                 price_data_list.append(price_data)
+                logging.debug(f"price_data {price_data}")
             
             logging.info(f"从 yfinance 获取了 {symbol} 的 {len(price_data_list)} 条历史数据 "
                         f"({start_str} 到 {end_str}, 频率: {frequency})")
