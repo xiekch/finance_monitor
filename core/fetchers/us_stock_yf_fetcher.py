@@ -138,8 +138,8 @@ class USStockYfFetcher(BaseFetcher):
             
             # 使用 start 和 end 参数获取指定时间范围的数据
             history = ticker.history(
-                start=start_str, 
-                end=end_str, 
+                start=start_date, 
+                end=end_date, 
                 interval=yf_interval,
                 auto_adjust=False  # 不自动调整价格
             )

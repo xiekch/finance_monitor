@@ -11,7 +11,7 @@ class NotificationConsumer(BaseConsumer):
     def __init__(self):
         super().__init__("NotificationConsumer", [
             MessageType.VOLATILITY_ALERT, 
-            MessageType.SYSTEM_EVENT
+            # MessageType.SYSTEM_EVENT
         ])
         self.wechat_notifier = WeChatNotifier()
     
