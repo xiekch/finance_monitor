@@ -167,8 +167,8 @@ class USStockDailyProducer(BaseProducer):
                                 frequency=FrequencyType.DAILY,
                                 price_data=data.to_dict(),
                                 source=self.producer_name,
-                                timestamp=datetime.now(),
-                                message_type=message_type  # 设置消息类型
+                                timestamp=data.timestamp,
+                                message_type=message_type
                             )
                             messages.append(message)
                             
@@ -244,7 +244,7 @@ class USStockDailyProducer(BaseProducer):
                                 frequency=FrequencyType.DAILY,
                                 price_data=data.to_dict(),
                                 source=f"{self.producer_name}_Historical",
-                                timestamp=datetime.now(),
+                                timestamp=data.timestamp,
                                 message_type=message_type
                             )
                             messages.append(message)

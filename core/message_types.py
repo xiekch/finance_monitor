@@ -63,12 +63,13 @@ class PriceDataMessage(BaseMessage):
         frequency: FrequencyType,
         price_data: Dict[str, Any],
         source: str,
-        messsage_type: MessageType = MessageType.PRICE_DATA,
+        timestamp: datetime,
+        message_type: MessageType = MessageType.PRICE_DATA,
     ):
         super().__init__(
             message_id=f"price_{symbol}_{market}_{frequency.value}_{datetime.now().timestamp()}",
-            message_type=messsage_type,
-            timestamp=datetime.now(),
+            message_type=message_type,
+            timestamp=timestamp,
             source=source,
             payload=price_data,
         )
