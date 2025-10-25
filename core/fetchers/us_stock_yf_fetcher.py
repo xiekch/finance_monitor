@@ -106,23 +106,55 @@ class USStockYfFetcher(BaseFetcher):
         )
 
     async def fetch_historical_data(
-        self, symbol: str, frequency: str = "1d", limit: int = 100
+        self, symbol: str, frequency: str = "1d", 
+        start_date: datetime = None, 
+        end_date: Optional[datetime] = None
     ) -> List[PriceData]:
-        """获取股票历史数据"""
+        """获取指定日期时间的股票历史数据
+        
+        Args:
+            symbol: 股票代码
+            frequency: 数据频率
+            start_date: 开始日期时间
+            end_date: 结束日期时间 (默认为当前时间)
+        """
+        # 设置默认值
+        if end_date is None:
+            end_date = datetime.now()
+        
+        if start_date is None:
+            # 如果没有指定开始日期，默认获取最近30天的数据
+            start_date = end_date - timedelta(days=30)
+        
         try:
             # 将频率转换为 yfinance 支持的格式
             yf_interval = self._convert_frequency(frequency)
-            yf_period = self._get_period_for_limit(limit, frequency)
-
+            
+            # 格式化日期为字符串
+            start_str = start_date.strftime("%Y-%m-%d")
+            end_str = end_date.strftime("%Y-%m-%d")
+            
             ticker = yf.Ticker(symbol)
-            history = ticker.history(period=yf_period, interval=yf_interval)
-
+            
+            # 使用 start 和 end 参数获取指定时间范围的数据
+            history = ticker.history(
+                start=start_str, 
+                end=end_str, 
+                interval=yf_interval,
+                auto_adjust=False  # 不自动调整价格
+            )
+            
             if history.empty:
-                logging.error(f"yfinance 未返回历史数据 for {symbol}")
-                return []
-
+                logging.warning(f"yfinance 未返回指定时间段的历史数据 for {symbol} ({start_str} to {end_str})")
+                # 尝试从数据库获取
+                return self._get_historical_from_db(symbol, frequency, start_date, end_date)
+            
             price_data_list = []
             for timestamp, row in history.iterrows():
+                # 跳过包含 NaN 值的行
+                if row.isnull().any():
+                    continue
+                    
                 price_data = PriceData(
                     symbol=symbol,
                     market="US",
@@ -135,13 +167,16 @@ class USStockYfFetcher(BaseFetcher):
                     frequency=frequency,
                 )
                 price_data_list.append(price_data)
-
-            return price_data_list[-limit:]  # 返回指定数量的最新数据
+            
+            logging.info(f"从 yfinance 获取了 {symbol} 的 {len(price_data_list)} 条历史数据 "
+                        f"({start_str} 到 {end_str}, 频率: {frequency})")
+            
+            return price_data_list
 
         except Exception as e:
             logging.error(f"yfinance 历史数据获取失败 {symbol}: {e}")
             # 失败时从数据库获取
-            return self._get_historical_from_db(symbol, frequency, limit)
+            return self._get_historical_from_db(symbol, frequency, start_date, end_date)
 
     def _convert_frequency(self, frequency: str) -> str:
         """将频率转换为 yfinance 支持的格式"""
@@ -157,56 +192,27 @@ class USStockYfFetcher(BaseFetcher):
         }
         return frequency_map.get(frequency, "1d")
 
-    def _get_period_for_limit(self, limit: int, frequency: str) -> str:
-        """根据限制数量和频率确定获取数据的周期"""
-        if frequency == "1m":
-            if limit <= 390:  # 一天的交易分钟数
-                return "1d"
-            elif limit <= 780:  # 两天的交易分钟数
-                return "2d"
-            else:
-                return "5d"
-        elif frequency == "1d":
-            if limit <= 30:
-                return "1mo"
-            elif limit <= 90:
-                return "3mo"
-            elif limit <= 180:
-                return "6mo"
-            else:
-                return "1y"
-        elif frequency == "1w":
-            if limit <= 12:
-                return "1y"
-            else:
-                return "5y"
-        else:
-            return "1y"
-
     def _get_historical_from_db(
-        self, symbol: str, frequency: str, limit: int
+        self, symbol: str, frequency: str, start_date: datetime, end_date: datetime
     ) -> List[PriceData]:
-        """从数据库获取历史数据"""
-        end_date = datetime.now()
-
-        # 根据频率计算开始日期
-        if frequency == "1m":
-            start_date = end_date - timedelta(days=min(limit // 390 + 1, 30))
-        elif frequency == "1d":
-            start_date = end_date - timedelta(days=limit * 2)  # 多取一些以防周末
-        elif frequency == "1w":
-            start_date = end_date - timedelta(weeks=limit * 2)
-        else:
-            start_date = end_date - timedelta(days=30)
-
-        return self.db.get_historical_prices(
-            symbol=symbol,
-            market="US",
-            frequency=frequency,
-            start_date=start_date,
-            end_date=end_date,
-            limit=limit,
-        )
+        """从数据库获取指定时间范围的历史数据"""
+        try:
+            historical_data = self.db.get_historical_prices(
+                symbol=symbol,
+                market="US",
+                frequency=frequency,
+                start_date=start_date,
+                end_date=end_date
+            )
+            
+            logging.info(f"从数据库获取了 {symbol} 的 {len(historical_data)} 条历史数据 "
+                        f"({start_date.strftime('%Y-%m-%d')} 到 {end_date.strftime('%Y-%m-%d')})")
+            
+            return historical_data
+            
+        except Exception as e:
+            logging.error(f"从数据库获取历史数据失败 {symbol}: {e}")
+            return []
 
     async def get_stock_info(self, symbol: str) -> dict:
         """获取股票基本信息"""
