@@ -45,7 +45,7 @@ class BaseProducer(ABC):
     def publish_message(self, message: BaseMessage, channel: str = None):
         """发布消息到消息队列"""
         if channel is None:
-            channel = f"channel_{message.message_type.value}"
+            channel = message.message_type.value
         
         mq.publish(channel, message.to_dict())
         logging.info(f"[{self.producer_name}] 发布消息到 {channel}: {message.message_id}")

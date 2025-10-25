@@ -14,7 +14,7 @@ from core.consumers.volatility_consumer import VolatilityConsumer
 from core.consumers.notification_consumer import NotificationConsumer
 from core.consumers.storage_consumer import StorageConsumer
 from core.message_queue import mq
-from core.message_types import SystemEventMessage
+from core.message_types import MessageType, SystemEventMessage
 
 
 class ProducerConsumerApp:
@@ -52,7 +52,7 @@ class ProducerConsumerApp:
             run_immediately=run_immediately, 
             ignore_schedule=ignore_schedule
         )
-        self.producers.append(minute_producer)
+        # self.producers.append(minute_producer)
 
         daily_producer = USStockDailyProducer(
             run_immediately=run_immediately,
@@ -64,7 +64,7 @@ class ProducerConsumerApp:
             run_immediately=run_immediately, 
             ignore_schedule=ignore_schedule
         )
-        self.producers.append(weekly_producer)
+        # self.producers.append(weekly_producer)
 
         # 加密货币数据生产者
         # crypto_producer = CryptoProducer(run_immediately=run_immediately, ignore_schedule=ignore_schedule)
@@ -131,7 +131,7 @@ class ProducerConsumerApp:
             },
             source="ProducerConsumerApp",
         )
-        mq.publish("channel_system_event", startup_message.to_dict())
+        mq.publish(MessageType.SYSTEM_EVENT.value, startup_message.to_dict())
 
         print("系统启动完成，所有生产者和消费者已开始运行")
         print("按 Ctrl+C 停止系统")
@@ -163,7 +163,7 @@ class ProducerConsumerApp:
             event_data={"timestamp": datetime.now().isoformat()},
             source="ProducerConsumerApp",
         )
-        mq.publish("channel_system_event", shutdown_message.to_dict())
+        mq.publish(MessageType.SYSTEM_EVENT.value, shutdown_message.to_dict())
 
         logging.info("系统已完全停止")
 

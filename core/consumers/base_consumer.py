@@ -33,7 +33,7 @@ class BaseConsumer(ABC):
     
     def _subscribe_channel(self, message_type: MessageType):
         """在独立线程中订阅一个频道"""
-        channel = f"channel_{message_type.value}"
+        channel = message_type.value
         handler = self._create_message_handler(message_type)
         
         print(f"[{self.consumer_name}] 开始订阅频道: {channel}")
@@ -67,8 +67,8 @@ class BaseConsumer(ABC):
         self.is_running = False
         
         # 取消订阅所有频道
-        for message_type in self.message_types:
-            channel = f"channel_{message_type.value}"
-            mq.unsubscribe(channel)  # 假设 mq 有 unsubscribe 方法
+        # for message_type in self.message_types:
+        #     channel = message_type.value
+        #     mq.unsubscribe(channel)  # 假设 mq 有 unsubscribe 方法
         
         print(f"[{self.consumer_name}] 消费者已停止")

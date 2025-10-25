@@ -61,5 +61,5 @@ class VolatilityConsumer(BaseConsumer):
                 
                 # 发布告警消息
                 from core.message_queue import mq
-                mq.publish(f"channel_{MessageType.VOLATILITY_ALERT.value}", alert_message.to_dict())
+                mq.publish(MessageType.VOLATILITY_ALERT.value, alert_message.to_dict())
                 print(f"[{self.consumer_name}] 发现波动告警: {alert.name} {alert.current_change:.2f}%")
