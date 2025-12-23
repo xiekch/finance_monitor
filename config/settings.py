@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 PROXY = True
+PROXY_URL = "http://127.0.0.1:7897" 
 if PROXY:
     os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7897'
     os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7897'
@@ -56,8 +57,8 @@ MONITOR_CONFIG = {
             {'name': '特斯拉', 'symbol': 'TSLA', 'market': 'US', 'threshold': 2.0},   
         ],
         'crypto': [
-            {'name': 'Bitcoin', 'symbol': 'BTCUSDT', 'market': 'CRYPTO', 'threshold': 8.0},
-            {'name': 'Ethereum', 'symbol': 'ETHUSDT', 'market': 'CRYPTO', 'threshold': 10.0},
+            {'name': 'Bitcoin', 'symbol': 'BTCUSDT', 'market': 'CRYPTO', 'threshold': 2.0},
+            {'name': 'Ethereum', 'symbol': 'ETHUSDT', 'market': 'CRYPTO', 'threshold': 3.0},
         ],
         'futures': [
             {'name': '黄金主力', 'symbol': 'AU0', 'market': 'FUT', 'threshold': 2.5},

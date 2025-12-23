@@ -17,7 +17,7 @@ class BaseConsumer(ABC):
         self.message_handlers: Dict[str, Callable] = {}
     
     @abstractmethod
-    def process_message(self, message: BaseMessage):
+    def process_message(self, message: Dict):
         """处理消息（由子类实现）"""
         pass
     

@@ -1,5 +1,5 @@
 import asyncio
-from typing import List
+from typing import Sequence, List
 from datetime import datetime
 
 from .base_producer import BaseProducer
@@ -19,7 +19,7 @@ class AStockProducer(BaseProducer):
             'weekly': FrequencyType.WEEKLY
         }
     
-    async def produce_data(self) -> List[PriceDataMessage]:
+    async def produce_data(self) -> Sequence[PriceDataMessage]:
         """生产A股数据（异步版本）"""
         messages = []
         
@@ -33,10 +33,7 @@ class AStockProducer(BaseProducer):
                     # 确保是A股数据
                     if data and data.market in ['SH', 'SZ']:
                         message = PriceDataMessage(
-                            symbol=data.symbol,
-                            market=data.market,
-                            frequency=FrequencyType.MINUTE,
-                            price_data=data.to_dict(),
+                            payload=data.to_dict(),
                             source=self.producer_name
                         )
                         messages.append(message)
@@ -74,17 +71,13 @@ class AStockProducer(BaseProducer):
                 # 获取历史数据
                 historical_data = await self.stock_fetcher.fetch_historical_data(
                     symbol=symbol_info['symbol'],
-                    market=symbol_info.get('market', ''),
                     frequency=self._convert_frequency(frequency),
                     limit=100
                 )
                 
                 for data in historical_data:
                     message = PriceDataMessage(
-                        symbol=data.symbol,
-                        market=data.market,
-                        frequency=frequency,
-                        price_data=data.to_dict(),
+                        payload=data.to_dict(),
                         source=f"{self.producer_name}_Historical"
                     )
                     historical_messages.append(message)

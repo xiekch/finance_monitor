@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import List, Sequence, Optional
 from core.message_queue import mq
 from core.message_types import BaseMessage
 import logging
@@ -30,7 +30,7 @@ class BaseProducer(ABC):
         self._setup_scheduler_listeners()
     
     @abstractmethod
-    async def produce_data(self) -> List[BaseMessage]:
+    async def produce_data(self) -> Sequence[BaseMessage]:
         """生产数据（异步方法，由子类实现）"""
         pass
     
@@ -42,7 +42,7 @@ class BaseProducer(ABC):
         """
         pass
     
-    def publish_message(self, message: BaseMessage, channel: str = None):
+    def publish_message(self, message: BaseMessage, channel: Optional[str] = None):
         """发布消息到消息队列"""
         if channel is None:
             channel = message.message_type.value

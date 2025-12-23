@@ -163,9 +163,13 @@ class ProducerConsumerApp:
 
         # 发送系统关闭事件
         shutdown_message = SystemEventMessage(
-            event_type="system_shutdown",
-            event_data={"timestamp": datetime.now().isoformat()},
             source="ProducerConsumerApp",
+            payload={
+                "event_type": "system_shutdown",
+                "event_data": {
+                    "timestamp": datetime.now().isoformat()
+                }
+            }
         )
         mq.publish(MessageType.SYSTEM_EVENT.value, shutdown_message.to_dict())
 

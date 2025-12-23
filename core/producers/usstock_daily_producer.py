@@ -1,4 +1,4 @@
-from typing import List
+from typing import Sequence, List
 from datetime import datetime, timedelta
 import logging
 from apscheduler.triggers.cron import CronTrigger
@@ -27,7 +27,7 @@ class USStockDailyProducer(BaseProducer):
             day_of_week='mon-fri'  # 只在工作日运行
         )
     
-    async def produce_data(self) -> List[PriceDataMessage]:
+    async def produce_data(self) -> Sequence[PriceDataMessage]:
         """生产美股日级数据"""
         messages = []
         
