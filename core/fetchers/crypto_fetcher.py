@@ -4,16 +4,18 @@ import requests
 from typing import List, Optional
 from datetime import datetime
 import json
-from websocket import WebSocketApp
+from websocket import WebSocket
 import ssl
 import threading
-
+import logging
+from config.settings import PROXY_URL
 from .base_fetcher import BaseFetcher
 from models.market_data import PriceData, MarketDataDB
 from core.trading_hours import TradingHoursManager
+import ssl
 
 class CryptoFetcher(BaseFetcher):
-    """加密货币数据获取器"""
+    """币安加密货币数据获取器"""
     
     def __init__(self, api_config: dict):
         super().__init__(api_config)
@@ -70,15 +72,16 @@ class CryptoFetcher(BaseFetcher):
                         frequency='1m'
                     )
                 else:
-                    print(f"Binance API错误: {response.status}")
+                    logging.info(f"Binance API错误: {response.status}")
                     return None
                     
         except Exception as e:
-            print(f"获取加密货币数据失败 {symbol}: {e}")
+            logging.error(f"获取加密货币数据失败 {symbol}: {e}")
             return None
     
-    async def fetch_historical_data(self, symbol: str, frequency: str = '1d', 
-                                  limit: int = 100) -> List[PriceData]:
+    async def fetch_historical_data(self, symbol: str, frequency: str, 
+                                  start_date: datetime, 
+                                  end_date: Optional[datetime] = None) -> List[PriceData]:
         """获取加密货币历史数据"""
         # 将频率转换为Binance的间隔参数
         interval_map = {
@@ -87,15 +90,23 @@ class CryptoFetcher(BaseFetcher):
         }
         
         interval = interval_map.get(frequency, '1d')
+        limit = 100
         url = f"{self.api_config['binance']['base_url']}/api/v3/klines"
         params = {
             'symbol': symbol.upper(),
             'interval': interval,
+            'startTime': int(start_date.timestamp() * 1000),
+            'endTime': int(end_date.timestamp() * 1000) if end_date else None,
             'limit': limit
         }
-        
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False  # 关闭主机名验证
+        ssl_context.verify_mode = ssl.CERT_NONE  # 关闭证书验证
+
+        # 3. 传入SSL上下文和代理
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(connector=connector, proxy=PROXY_URL) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -117,11 +128,11 @@ class CryptoFetcher(BaseFetcher):
                         
                         return price_data_list
                     else:
-                        print(f"Binance历史数据API错误: {response.status}")
+                        logging.error(f"Binance历史数据API错误: {response.status}")
                         return []
                         
         except Exception as e:
-            print(f"获取加密货币历史数据失败 {symbol}: {e}")
+            logging.error(f"获取加密货币历史数据失败 {symbol}: {e}")
             return []
     
     def start_websocket_monitoring(self, symbols: List[dict], callback):
@@ -164,15 +175,15 @@ class CryptoFetcher(BaseFetcher):
         
         def on_error(ws, error):
             """处理WebSocket错误"""
-            print(f"加密货币WebSocket错误: {error}")
+            logging.info(f"加密货币WebSocket错误: {error}")
         
         def on_close(ws, close_status_code, close_msg):
             """WebSocket关闭"""
-            print("加密货币WebSocket连接关闭")
+            logging.info("加密货币WebSocket连接关闭")
         
         def run_websocket():
             """运行WebSocket"""
-            ws = WebSocketApp(
+            ws = WebSocket(
                 ws_url,
                 on_message=on_message,
                 on_error=on_error,
@@ -184,11 +195,11 @@ class CryptoFetcher(BaseFetcher):
         self.websocket_thread = threading.Thread(target=run_websocket)
         self.websocket_thread.daemon = True
         self.websocket_thread.start()
-        print("加密货币WebSocket监控已启动")
+        logging.info("加密货币WebSocket监控已启动")
     
     def stop_websocket_monitoring(self):
         """停止WebSocket监控"""
         self.is_websocket_running = False
         if self.websocket_thread:
             self.websocket_thread.join(timeout=5)
-        print("加密货币WebSocket监控已停止")
+        logging.info("加密货币WebSocket监控已停止")

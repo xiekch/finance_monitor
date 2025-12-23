@@ -4,7 +4,7 @@ import sys
 from datetime import datetime
 import time
 import asyncio
-
+import os
 from core.producers.astock_producer import AStockProducer
 from core.producers.usstock_minute_producer import USStockMinuteProducer
 from core.producers.usstock_weekly_producer import USStockWeeklyProducer
@@ -27,13 +27,21 @@ class ProducerConsumerApp:
 
         # 配置日志
         logging.basicConfig(
-            level=logging.DEBUG,
+            level=logging.INFO,
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             handlers=[
                 logging.FileHandler("app.log", encoding="utf-8"),
                 logging.StreamHandler(sys.stdout),
             ],
         )
+
+        # 后台启动Redis（推荐，不阻塞Python脚本）
+        status = os.system("redis-server --daemonize yes")
+
+        if status == 0:
+            logging.info("Redis 启动命令执行成功（后台运行）")
+        else:
+            logging.error("Redis 启动失败，可能是命令不存在或权限问题")
 
     def setup_producers(
         self, run_immediately: bool = True, ignore_schedule: bool = False
@@ -67,8 +75,8 @@ class ProducerConsumerApp:
         # self.producers.append(weekly_producer)
 
         # 加密货币数据生产者
-        # crypto_producer = CryptoProducer(run_immediately=run_immediately, ignore_schedule=ignore_schedule)
-        # self.producers.append(crypto_producer)
+        crypto_producer = CryptoProducer(run_immediately=run_immediately, ignore_schedule=ignore_schedule)
+        self.producers.append(crypto_producer)
 
         print("生产者设置完成")
 
@@ -97,7 +105,6 @@ class ProducerConsumerApp:
         """
         welcome_str = f"\n{'=' * 50}\n启动生产者-消费者模式市场监控系统\n{'=' * 50}"
         logging.info(welcome_str)
-        print(welcome_str)
 
         print(f"运行模式: 立即执行={run_immediately}, 忽略调度={ignore_schedule}")
 
@@ -173,6 +180,7 @@ class ProducerConsumerApp:
         )
         mq.publish(MessageType.SYSTEM_EVENT.value, shutdown_message.to_dict())
 
+        os.system("redis-cli shutdown")
         logging.info("系统已完全停止")
 
     def run(self, run_immediately: bool = True, ignore_schedule: bool = False):

@@ -53,7 +53,7 @@ class VolatilityAnalyzer:
         
         # 获取前一个交易日的数据
         end_date = datetime.fromisoformat(current_data.timestamp)
-        start_date = end_date - timedelta(days=2)  # 多取一天确保有数据
+        start_date = end_date - timedelta(days=4)  # 多取一天确保有数据
         
         try:
             # 从数据库获取历史数据
@@ -78,7 +78,8 @@ class VolatilityAnalyzer:
             )
             
             threshold = self.threshold_manager.get_threshold(symbol, 'daily', market=current_data.market)
-            
+            logging.info(f"日频波动分析: {symbol} 最新价: {latest_data.close}, 前一日价: {previous_data.close}, "
+                         f"涨跌幅: {change_percent:.2f}%, 阈值: {threshold}%")
             if abs(change_percent) >= threshold:
                 return VolatilityAlert(
                     symbol=symbol,
@@ -128,7 +129,8 @@ class VolatilityAnalyzer:
             )
             
             threshold = self.threshold_manager.get_threshold(symbol, 'weekly', market=current_data.market)
-            
+            logging.info(f"周频波动分析: {symbol} 最新价: {latest_data.close}, 前一周价: {previous_data.close}, "   
+                         f"涨跌幅: {change_percent:.2f}%, 阈值: {threshold}%")
             if abs(change_percent) >= threshold:
                 return VolatilityAlert(
                     symbol=symbol,

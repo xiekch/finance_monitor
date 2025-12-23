@@ -26,7 +26,7 @@ class BaseConsumer(ABC):
         channel = message_type.value
         def handler(data):
             try:
-                logging.info(f"原始数据 {data}")
+                logging.debug(f"原始数据 {data}")
                 self.process_message(data)
             except Exception as e:
                 logging.error(f"[{self.consumer_name}] 处理 {message_type.value} 消息失败: {e}", exc_info=True)
