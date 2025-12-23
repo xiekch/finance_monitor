@@ -20,5 +20,7 @@ class StorageConsumer(BaseConsumer):
         price_data = PriceData(**price_message.payload)
         
         # 保存到数据库
-        self.db.save_price_data(price_data)
-        logging.info(f"[{self.consumer_name}] 数据已保存: {price_data.symbol} {price_data.timestamp}")
+        if self.db.save_price_data(price_data):
+            logging.info(f"[{self.consumer_name}] 数据已保存: {price_data.symbol} {price_data}")
+        else:
+            logging.info(f"[{self.consumer_name}] 数据已存在，无需保存: {price_data.symbol} {price_data}")
