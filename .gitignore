@@ -2,3 +2,5 @@
 __pycache__/
 app.log
 test.py
+.pytest_cache/
+.venv/
