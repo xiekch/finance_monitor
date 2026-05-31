@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Sequence, Optional
-from message_queue import mq
+from infra.message_queue import mq
 from models.messages import BaseMessage
 import logging
 from apscheduler.schedulers.background import BackgroundScheduler

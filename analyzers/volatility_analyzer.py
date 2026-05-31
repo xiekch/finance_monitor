@@ -2,7 +2,7 @@ from typing import List, Dict, Any, Optional
 import logging
 from datetime import datetime, timedelta
 from models.market import PriceData, VolatilityAlert
-from threshold_manager import ThresholdManager
+from analyzers.threshold_manager import ThresholdManager
 from storage.market_db import MarketDataDB
 
 

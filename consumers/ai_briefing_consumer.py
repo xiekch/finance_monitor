@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Dict, Optional
 
 from consumers.base_consumer import BaseConsumer
-from message_queue import mq
+from infra.message_queue import mq
 from models.messages import (
     MessageType,
     SocialPostBatchMessage,

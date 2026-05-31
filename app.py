@@ -19,7 +19,7 @@ from consumers.volatility_consumer import VolatilityConsumer
 from consumers.notification_consumer import NotificationConsumer
 from consumers.storage_consumer import StorageConsumer
 from consumers.ai_briefing_consumer import AIBriefingConsumer
-from message_queue import mq
+from infra.message_queue import mq
 from models.messages import MessageType, SystemEventMessage
 from config.settings import PRODUCER_SCHEDULE
 from config.social import SOCIAL_CONFIG, assert_social_env_ready

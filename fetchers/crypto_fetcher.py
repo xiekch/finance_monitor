@@ -12,7 +12,7 @@ from config.settings import PROXY_URL
 from .base_fetcher import BaseFetcher
 from models.market import PriceData
 from storage.market_db import MarketDataDB
-from trading_hours import TradingHoursManager
+from infra.trading_hours import TradingHoursManager
 import ssl
 
 class CryptoFetcher(BaseFetcher):

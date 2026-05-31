@@ -34,26 +34,23 @@
 
 ```
 .
-├── app_producer_consumer.py     # 应用入口 / PRODUCER_REGISTRY / trigger 注入
-├── config/settings.py           # API、监控标的、阈值、Redis、PRODUCER_SCHEDULE
-├── core/
-│   ├── message_queue.py         # Redis 消息队列封装
-│   ├── message_types.py         # 消息类型与数据类
-│   ├── smart_scheduler.py
-│   ├── threshold_manager.py     # 阈值查询
-│   ├── trading_hours.py         # 交易时段判断
-│   ├── producers/               # 各市场各频率的生产者
-│   ├── consumers/               # 存储 / 分析 / 通知 消费者
-│   ├── fetchers/                # 数据抓取（yfinance / binance / 股票接口）
-│   ├── analyzers/               # 波动率分析
-│   └── notifiers/               # 企业微信通知
-└── models/market_data.py        # PriceData / VolatilityAlert / SQLite 封装
+├── app.py                  # 应用入口 / PRODUCER_REGISTRY / trigger 注入
+├── config/                 # settings.py（监控/调度）、social.py（X+LLM）
+├── models/                 # messages、market、social 数据类
+├── infra/                  # message_queue（Redis pub/sub）、trading_hours
+├── clients/                # llm_client、social_client（外部 API 封装）
+├── storage/                # market_db、social_store（SQLite 持久化）
+├── producers/              # 各市场各频率的生产者
+├── consumers/              # 存储 / 分析 / 通知 / AI 简报 消费者
+├── fetchers/               # 数据抓取（yfinance / binance / 股票接口）
+├── analyzers/              # 波动率分析、threshold_manager
+└── notifiers/              # 企业微信通知
 ```
 
 ## 环境要求
 
 - Python 3.9+
-- Redis（运行时由 `app_producer_consumer.py` 通过 `redis-server --daemonize yes` 自动后台启动，需要本机已安装 `redis-server`）
+- Redis（运行时由 `app.py` 通过 `redis-server --daemonize yes` 自动后台启动，需要本机已安装 `redis-server`）
 - 依赖：`redis`、`apscheduler`、`yfinance`、`requests`、`pandas`、`python-dotenv` 等
 
 ## 配置
@@ -96,19 +93,19 @@ python3 -m venv .venv
 
 ```bash
 # 正常调度模式：常驻运行，按 cron 触发（默认 producer：usstock_daily + crypto_daily）
-.venv/bin/python3 app_producer_consumer.py
+.venv/bin/python3 app.py
 
 # 启动时不立即执行一次
-.venv/bin/python3 app_producer_consumer.py --no-immediate
+.venv/bin/python3 app.py --no-immediate
 
 # 只执行一次后自动退出
-.venv/bin/python3 app_producer_consumer.py --once
+.venv/bin/python3 app.py --once
 
 # 只启动指定 producer（逗号分隔）
-.venv/bin/python3 app_producer_consumer.py --producers usstock_minute,crypto_minute
+.venv/bin/python3 app.py --producers usstock_minute,crypto_minute
 
 # 列出所有可选 producer 后退出
-.venv/bin/python3 app_producer_consumer.py --list-producers
+.venv/bin/python3 app.py --list-producers
 ```
 
 日志写入 `app.log` 并同时打印到控制台。
@@ -121,13 +118,13 @@ python3 -m venv .venv
 
 ```bash
 # 单独跑（每天按 SOCIAL_CONFIG["cron_hours"] 触发）
-python app_producer_consumer.py --producers x_briefing
+python app.py --producers x_briefing
 
 # 与行情 producer 一起跑
-python app_producer_consumer.py --producers crypto_daily,usstock_daily,x_briefing
+python app.py --producers crypto_daily,usstock_daily,x_briefing
 
 # 立即跑一次（联调用；since_id 已更新后再跑会拉到 0 条 → 不重复推送）
-python app_producer_consumer.py --producers x_briefing --once
+python app.py --producers x_briefing --once
 ```
 
 ### 环境变量（追加到 `.env`）
@@ -165,8 +162,8 @@ SOCIALDATA_API_KEY=...           # 第三方 X 聚合服务的 key
 ## 扩展
 
 - **新增生产者**：
-  1. 继承 `core/producers/base_producer.py:BaseProducer`，只需实现 `produce_data()`；触发器由外部注入，不要在类里写 cron。
-  2. 在 `app_producer_consumer.py:PRODUCER_REGISTRY` 加一条 `"key": (YourProducer, {extra_kwargs})`。
+  1. 继承 `producers/base_producer.py:BaseProducer`，只需实现 `produce_data()`；触发器由外部注入，不要在类里写 cron。
+  2. 在 `app.py:PRODUCER_REGISTRY` 加一条 `"key": (YourProducer, {extra_kwargs})`。
   3. 在 `config/settings.py:PRODUCER_SCHEDULE` 加该 key 的触发器配置（或 `None` 表示无调度）。
-- **新增消费者**：继承 `core/consumers/base_consumer.py:BaseConsumer`，声明关心的 `MessageType` 并实现 `process_message()`。
-- **新增数据源**：继承 `core/fetchers/base_fetcher.py:BaseFetcher`。
+- **新增消费者**：继承 `consumers/base_consumer.py:BaseConsumer`，声明关心的 `MessageType` 并实现 `process_message()`。
+- **新增数据源**：继承 `fetchers/base_fetcher.py:BaseFetcher`。

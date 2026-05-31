@@ -4,7 +4,7 @@ import logging
 from .base_consumer import BaseConsumer
 from models.messages import BaseMessage, PriceDataMessage, VolatilityAlertMessage, MessageType, FrequencyType
 from analyzers.volatility_analyzer import VolatilityAnalyzer
-from threshold_manager import ThresholdManager
+from analyzers.threshold_manager import ThresholdManager
 from models.market import PriceData
 
 class VolatilityConsumer(BaseConsumer):
@@ -50,6 +50,6 @@ class VolatilityConsumer(BaseConsumer):
             )
             
             # 发布告警消息
-            from message_queue import mq
+            from infra.message_queue import mq
             mq.publish(MessageType.VOLATILITY_ALERT.value, alert_message.to_dict())
             logging.info(f"[{self.consumer_name}] 发现波动告警: {alert.name} {alert.current_change:.2f}%")
