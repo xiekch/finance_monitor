@@ -12,9 +12,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from core.producers.astock_producer import AStockProducer
-from core.producers.usstock_minute_producer import USStockMinuteProducer
-from core.producers.usstock_weekly_producer import USStockWeeklyProducer
-from core.producers.usstock_daily_producer import USStockDailyProducer
+from core.producers.usstock_producer import USStockProducer
 from core.producers.crypto_producer import CryptoProducer
 from core.consumers.volatility_consumer import VolatilityConsumer
 from core.consumers.notification_consumer import NotificationConsumer
@@ -24,12 +22,13 @@ from core.message_types import MessageType, SystemEventMessage
 from config.settings import PRODUCER_SCHEDULE
 
 
-PRODUCER_REGISTRY: dict[str, type] = {
-    "astock":         AStockProducer,
-    "usstock_minute": USStockMinuteProducer,
-    "usstock_daily":  USStockDailyProducer,
-    "usstock_weekly": USStockWeeklyProducer,
-    "crypto":         CryptoProducer,
+# (producer_cls, 构造时附加的 kwargs)；trigger 由 PRODUCER_SCHEDULE 单独提供
+PRODUCER_REGISTRY: dict[str, tuple[type, dict]] = {
+    "astock":         (AStockProducer, {}),
+    "usstock_minute": (USStockProducer, {"frequency": "minute"}),
+    "usstock_daily":  (USStockProducer, {"frequency": "daily"}),
+    "usstock_weekly": (USStockProducer, {"frequency": "weekly"}),
+    "crypto":         (CryptoProducer, {}),
 }
 
 DEFAULT_PRODUCERS: list[str] = ["usstock_daily", "crypto"]
@@ -97,9 +96,10 @@ class ProducerConsumerApp:
             ignore_schedule: run only once, skip scheduling.
         """
         for key in producer_keys:
-            cls = PRODUCER_REGISTRY[key]
+            cls, extra_kwargs = PRODUCER_REGISTRY[key]
             trigger = build_trigger(PRODUCER_SCHEDULE.get(key))
             self.producers.append(cls(
+                **extra_kwargs,
                 trigger=trigger,
                 run_immediately=run_immediately,
                 ignore_schedule=ignore_schedule,
@@ -327,8 +327,10 @@ if __name__ == "__main__":
 
     if args.list_producers:
         print("可选 producer:")
-        for key, cls in PRODUCER_REGISTRY.items():
-            print(f"  {key:16s} -> {cls.__name__}")
+        for key, (cls, extra_kwargs) in PRODUCER_REGISTRY.items():
+            extras = ", ".join(f"{k}={v!r}" for k, v in extra_kwargs.items())
+            suffix = f" ({extras})" if extras else ""
+            print(f"  {key:16s} -> {cls.__name__}{suffix}")
         sys.exit(0)
 
     app = ProducerConsumerApp()
