@@ -4,3 +4,8 @@ app.log
 test.py
 .pytest_cache/
 .venv/
+
+# Redis RDB 快照（redis-server 后台启动时落在 cwd）
+dump.rdb
+# SQLite 行情数据库
+*.db
