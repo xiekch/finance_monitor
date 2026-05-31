@@ -55,41 +55,33 @@ class ProducerConsumerApp:
             logging.error("Redis 启动失败，可能是命令不存在或权限问题")
 
     def setup_producers(
-        self, run_immediately: bool = True, ignore_schedule: bool = False
+        self,
+        producer_keys: list[str],
+        run_immediately: bool = True,
+        ignore_schedule: bool = False,
     ):
-        """设置生产者
+        """Instantiate producers selected by short key.
 
         Args:
-            run_immediately: 是否在启动时立即执行一次
-            ignore_schedule: 是否忽略调度，只执行一次
+            producer_keys: keys from PRODUCER_REGISTRY to enable.
+            run_immediately: run once on startup.
+            ignore_schedule: run only once, skip scheduling.
         """
-        # A股数据生产者
-        # a_stock_producer = AStockProducer(run_immediately=run_immediately, ignore_schedule=ignore_schedule)
-        # self.producers.append(a_stock_producer)
+        extra_kwargs = {
+            "usstock_minute": {"interval_minutes": 5},
+        }
 
-        # 美股数据生产者 - 分频率
-        minute_producer = USStockMinuteProducer(
-            interval_minutes=5,
-            run_immediately=run_immediately,
-            ignore_schedule=ignore_schedule,
-        )
-        # self.producers.append(minute_producer)
+        for key in producer_keys:
+            cls = PRODUCER_REGISTRY[key]
+            kwargs = {
+                "run_immediately": run_immediately,
+                "ignore_schedule": ignore_schedule,
+                **extra_kwargs.get(key, {}),
+            }
+            self.producers.append(cls(**kwargs))
 
-        daily_producer = USStockDailyProducer(
-            run_immediately=run_immediately, ignore_schedule=ignore_schedule
-        )
-        self.producers.append(daily_producer)
-
-        weekly_producer = USStockWeeklyProducer(
-            run_immediately=run_immediately, ignore_schedule=ignore_schedule
-        )
-        # self.producers.append(weekly_producer)
-
-        # 加密货币数据生产者
-        crypto_producer = CryptoProducer(run_immediately=run_immediately, ignore_schedule=ignore_schedule)
-        self.producers.append(crypto_producer)
-
-        print("生产者设置完成")
+        logging.info(f"已启用 producer: {producer_keys}")
+        print(f"生产者设置完成: {producer_keys}")
 
     def setup_consumers(self):
         """设置消费者"""
@@ -107,7 +99,12 @@ class ProducerConsumerApp:
 
         print("消费者设置完成")
 
-    def start_system(self, run_immediately: bool = True, ignore_schedule: bool = False):
+    def start_system(
+        self,
+        producer_keys: list[str],
+        run_immediately: bool = True,
+        ignore_schedule: bool = False,
+    ):
         """启动系统
 
         Args:
@@ -117,7 +114,7 @@ class ProducerConsumerApp:
         welcome_str = f"\n{'=' * 50}\n启动生产者-消费者模式市场监控系统\n{'=' * 50}"
         logging.info(welcome_str)
 
-        print(f"运行模式: 立即执行={run_immediately}, 忽略调度={ignore_schedule}")
+        print(f"运行模式: producers={producer_keys}, 立即执行={run_immediately}, 忽略调度={ignore_schedule}")
 
         self.is_running = True
 
@@ -127,7 +124,9 @@ class ProducerConsumerApp:
 
         # 设置生产者和消费者
         self.setup_producers(
-            run_immediately=run_immediately, ignore_schedule=ignore_schedule
+            producer_keys=producer_keys,
+            run_immediately=run_immediately,
+            ignore_schedule=ignore_schedule,
         )
         self.setup_consumers()
 
@@ -194,7 +193,12 @@ class ProducerConsumerApp:
         os.system("redis-cli shutdown")
         logging.info("系统已完全停止")
 
-    def run(self, run_immediately: bool = True, ignore_schedule: bool = False):
+    def run(
+        self,
+        producer_keys: list[str],
+        run_immediately: bool = True,
+        ignore_schedule: bool = False,
+    ):
         """运行应用
 
         Args:
@@ -203,7 +207,9 @@ class ProducerConsumerApp:
         """
         try:
             self.start_system(
-                run_immediately=run_immediately, ignore_schedule=ignore_schedule
+                producer_keys=producer_keys,
+                run_immediately=run_immediately,
+                ignore_schedule=ignore_schedule,
             )
 
             # 如果忽略调度，等待生产任务完成后自动停止
@@ -258,4 +264,8 @@ if __name__ == "__main__":
     run_immediately = not args.no_immediate
     ignore_schedule = args.once
 
-    app.run(run_immediately=run_immediately, ignore_schedule=ignore_schedule)
+    app.run(
+        producer_keys=DEFAULT_PRODUCERS,
+        run_immediately=run_immediately,
+        ignore_schedule=ignore_schedule,
+    )
