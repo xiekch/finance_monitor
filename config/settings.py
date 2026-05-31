@@ -150,3 +150,6 @@ REDIS_CONFIG = {
     'password': os.getenv('REDIS_PASSWORD') or None,
     'decode_responses': True
 }
+
+# 消息总线 backend：'memory'（进程内，默认）或 'redis'（跨进程，需 redis-server 可用）
+MQ_BACKEND = 'memory'

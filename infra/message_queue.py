@@ -1,57 +1,67 @@
-import redis
-import json
-import pickle
-import logging
-from typing import Any, Dict, Optional
-from config.settings import REDIS_CONFIG
+"""消息总线抽象 + 两种 backend。
 
-class MessageQueue:
-    """基于Redis的消息队列"""
-    
+默认 in-memory（个人监控、单进程足够）；
+设置环境变量 ``MQ_BACKEND=redis`` 切回 Redis pub/sub（多进程/多主机场景）。
+"""
+import json
+import logging
+import queue
+import threading
+from collections import defaultdict
+from typing import Any, Callable, Dict, List, Optional, Protocol
+
+
+class MessageQueueBackend(Protocol):
+    def publish(self, channel: str, message: Dict[str, Any]) -> None: ...
+    def subscribe(self, channel: str, callback: Callable[[Dict[str, Any]], None]) -> None: ...
+    # push_to_queue / pop_from_queue / get_queue_length 是原 Redis 实现保留的
+    # "任务队列" 接口，目前代码库无引用；仅 RedisMessageQueue 保留实现。
+
+
+class RedisMessageQueue:
+    """基于 Redis Pub/Sub 的消息总线。跨进程 / 跨主机用。"""
+
     def __init__(self):
+        import redis
+        from config.settings import REDIS_CONFIG
         self.redis_client = redis.Redis(
-            host=REDIS_CONFIG['host'],
-            port=REDIS_CONFIG['port'],
-            db=REDIS_CONFIG['db'],
-            password=REDIS_CONFIG.get('password'),
-            decode_responses=True
+            host=REDIS_CONFIG["host"],
+            port=REDIS_CONFIG["port"],
+            db=REDIS_CONFIG["db"],
+            password=REDIS_CONFIG.get("password"),
+            decode_responses=True,
         )
-    
-    def publish(self, channel: str, message: Dict[str, Any]):
-        """发布消息到指定频道"""
+
+    def publish(self, channel: str, message: Dict[str, Any]) -> None:
         try:
-            serialized_message = json.dumps(message, default=str)
-            self.redis_client.publish(channel, serialized_message)
+            self.redis_client.publish(channel, json.dumps(message, default=str))
         except Exception as e:
-            print(f"消息发布失败: {e}")
-    
-    def subscribe(self, channel: str, callback):
-        """订阅频道并处理消息"""
+            logging.error(f"[redis] publish failed channel={channel}: {e}")
+
+    def subscribe(self, channel: str, callback: Callable[[Dict[str, Any]], None]) -> None:
+        """阻塞当前线程，订阅 channel 并把每条消息交给 callback。"""
         pubsub = self.redis_client.pubsub()
-        def message_handler(message):
-            if message['type'] == 'message':
-                # 解析 JSON 数据
-                data = json.loads(message['data'])
-                # 直接调用回调函数
-                callback(data)
-        
-        # 订阅频道，传入消息处理器
-        pubsub.subscribe(**{channel: message_handler})
-        logging.info(f"开始监听频道: {channel}")
-        for message in pubsub.listen():
-            # logging.info(f"forloop {message}")
+
+        def _handler(msg):
+            if msg["type"] == "message":
+                try:
+                    callback(json.loads(msg["data"]))
+                except Exception as e:
+                    logging.error(f"[redis] handler error: {e}", exc_info=True)
+
+        pubsub.subscribe(**{channel: _handler})
+        logging.info(f"[redis] 开始监听频道: {channel}")
+        for _ in pubsub.listen():
             pass
-    
-    def push_to_queue(self, queue_name: str, item: Dict[str, Any]):
-        """推送到队列（用于任务队列）"""
+
+    # 任务队列接口（保留兼容，目前无调用方）
+    def push_to_queue(self, queue_name: str, item: Dict[str, Any]) -> None:
         try:
-            serialized_item = json.dumps(item, default=str)
-            self.redis_client.lpush(queue_name, serialized_item)
+            self.redis_client.lpush(queue_name, json.dumps(item, default=str))
         except Exception as e:
-            print(f"队列推送失败: {e}")
-    
+            logging.error(f"[redis] push_to_queue failed: {e}")
+
     def pop_from_queue(self, queue_name: str, timeout: int = 0) -> Optional[Dict[str, Any]]:
-        """从队列弹出项目（阻塞模式）"""
         try:
             if timeout > 0:
                 result = self.redis_client.brpop(queue_name, timeout=timeout)
@@ -63,12 +73,56 @@ class MessageQueue:
                 if item_data:
                     return json.loads(item_data)
         except Exception as e:
-            print(f"队列弹出失败: {e}")
+            logging.error(f"[redis] pop_from_queue failed: {e}")
         return None
-    
+
     def get_queue_length(self, queue_name: str) -> int:
-        """获取队列长度"""
         return self.redis_client.llen(queue_name)
 
+
+class InMemoryMessageQueue:
+    """进程内 fan-out pub/sub。
+
+    与 Redis pub/sub 语义一致：每个 ``subscribe`` 调用占用当前线程并阻塞，
+    每个订阅者拿到 publish 的完整一份消息（broadcast）。
+
+    注意：队列无上限。极端情况下消费者卡死会让队列无界增长 → OOM。
+    对个人监控、低频场景足够；如未来加高频源，需要补 maxsize + drop 策略。
+    """
+
+    def __init__(self):
+        self._lock = threading.RLock()
+        self._subscribers: Dict[str, List[queue.Queue]] = defaultdict(list)
+
+    def publish(self, channel: str, message: Dict[str, Any]) -> None:
+        with self._lock:
+            queues = list(self._subscribers[channel])
+        for q in queues:
+            q.put(message)   # 立即返回，consumer 在各自线程消费
+
+    def subscribe(self, channel: str, callback: Callable[[Dict[str, Any]], None]) -> None:
+        q: queue.Queue = queue.Queue()
+        with self._lock:
+            self._subscribers[channel].append(q)
+        logging.info(f"[memory] 开始监听频道: {channel}")
+        while True:
+            msg = q.get()
+            try:
+                callback(msg)
+            except Exception as e:
+                logging.error(f"[memory] handler error: {e}", exc_info=True)
+
+
+def _build_default_backend() -> MessageQueueBackend:
+    from config.settings import MQ_BACKEND
+    if MQ_BACKEND == "redis":
+        logging.info("[mq] 使用 Redis backend (MQ_BACKEND=redis)")
+        return RedisMessageQueue()
+    if MQ_BACKEND != "memory":
+        logging.warning(f"[mq] 未知 MQ_BACKEND={MQ_BACKEND!r}，回退到 memory")
+    logging.info("[mq] 使用 InMemory backend (单进程)")
+    return InMemoryMessageQueue()
+
+
 # 全局消息队列实例
-mq = MessageQueue()
+mq: MessageQueueBackend = _build_default_backend()

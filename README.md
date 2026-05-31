@@ -50,7 +50,7 @@
 ## 环境要求
 
 - Python 3.9+
-- Redis（运行时由 `app.py` 通过 `redis-server --daemonize yes` 自动后台启动，需要本机已安装 `redis-server`）
+- Redis（**可选**）：默认消息总线是进程内 in-memory backend，无需 Redis。如需切回 Redis，把 `config/settings.py` 里的 `MQ_BACKEND` 改成 `'redis'`，`app.py` 会通过 `redis-server --daemonize yes` 启动本机 Redis（此时需要本机已安装 `redis-server`）
 - 依赖：`redis`、`apscheduler`、`yfinance`、`requests`、`pandas`、`python-dotenv` 等
 
 ## 配置
@@ -73,6 +73,7 @@ REDIS_PASSWORD=
 - `MONITOR_CONFIG`：按 `minute / daily / weekly` × `stocks / crypto / futures` 配置
 - `PRODUCER_SCHEDULE`：按 producer key 配置 APScheduler 触发器；形如 `{"type": "cron", "kwargs": {...}}`，`None` 表示无调度。运行频次与 producer 类解耦，改时间不用动代码。
 - `PROXY` / `PROXY_URL`：海外行情抓取的本地代理（默认 `http://127.0.0.1:7897`）
+- `MQ_BACKEND`：消息总线 backend，`'memory'`（默认，进程内）或 `'redis'`（跨进程）
 
 ## 运行
 

@@ -21,7 +21,7 @@ from consumers.storage_consumer import StorageConsumer
 from consumers.ai_briefing_consumer import AIBriefingConsumer
 from infra.message_queue import mq
 from models.messages import MessageType, SystemEventMessage
-from config.settings import PRODUCER_SCHEDULE
+from config.settings import PRODUCER_SCHEDULE, MQ_BACKEND
 from config.social import SOCIAL_CONFIG, assert_social_env_ready
 
 
@@ -40,6 +40,10 @@ PRODUCER_REGISTRY: dict[str, tuple[type, dict]] = {
 }
 
 DEFAULT_PRODUCERS: list[str] = ["usstock_daily", "crypto_daily"]
+
+
+def _using_redis_backend() -> bool:
+    return MQ_BACKEND == "redis"
 
 
 _TRIGGER_TYPES = {
@@ -79,13 +83,13 @@ class ProducerConsumerApp:
             ],
         )
 
-        # 后台启动Redis（推荐，不阻塞Python脚本）
-        status = os.system("redis-server --daemonize yes")
-
-        if status == 0:
-            logging.info("Redis 启动命令执行成功（后台运行）")
-        else:
-            logging.error("Redis 启动失败，可能是命令不存在或权限问题")
+        # 后台启动 Redis（仅 MQ_BACKEND=redis 时；默认走进程内 backend，无需 Redis）
+        if _using_redis_backend():
+            status = os.system("redis-server --daemonize yes")
+            if status == 0:
+                logging.info("Redis 启动命令执行成功（后台运行）")
+            else:
+                logging.error("Redis 启动失败，可能是命令不存在或权限问题")
 
     def setup_producers(
         self,
@@ -240,7 +244,8 @@ class ProducerConsumerApp:
         )
         mq.publish(MessageType.SYSTEM_EVENT.value, shutdown_message.to_dict())
 
-        os.system("redis-cli shutdown")
+        if _using_redis_backend():
+            os.system("redis-cli shutdown")
         logging.info("系统已完全停止")
 
     def run(
