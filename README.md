@@ -34,8 +34,8 @@
 
 ```
 .
-├── app_producer_consumer.py     # 应用入口
-├── config/settings.py           # API、监控标的、阈值、Redis、调度配置
+├── app_producer_consumer.py     # 应用入口 / PRODUCER_REGISTRY / trigger 注入
+├── config/settings.py           # API、监控标的、阈值、Redis、PRODUCER_SCHEDULE
 ├── core/
 │   ├── message_queue.py         # Redis 消息队列封装
 │   ├── message_types.py         # 消息类型与数据类
@@ -74,32 +74,51 @@ REDIS_PASSWORD=
 监控标的、阈值、调度时间在 `config/settings.py` 中调整：
 
 - `MONITOR_CONFIG`：按 `minute / daily / weekly` × `stocks / crypto / futures` 配置
-- `TASK_CONFIG`：日级、周级任务执行时间
+- `PRODUCER_SCHEDULE`：按 producer key 配置 APScheduler 触发器；形如 `{"type": "cron", "kwargs": {...}}`，`None` 表示无调度。运行频次与 producer 类解耦，改时间不用动代码。
+- `TASK_CONFIG`：日级、周级任务执行时间（旧配置，部分场景仍在使用）
 - `PROXY` / `PROXY_URL`：海外行情抓取的本地代理（默认 `http://127.0.0.1:7897`）
 
 ## 运行
 
+### 首次准备
+
+```bash
+# 创建虚拟环境（仓库默认使用 .venv/）
+python3 -m venv .venv
+
+# 安装依赖
+.venv/bin/pip install -r requirements.txt
+```
+
+下面的命令默认使用仓库内 `.venv`，无需 `source .venv/bin/activate`。
+若已激活 venv 或想用系统 Python，把 `.venv/bin/python3` 换成 `python` 即可。
+
+### 启动
+
 ```bash
 # 正常调度模式：常驻运行，按 cron 触发（默认 producer：usstock_daily + crypto）
-python app_producer_consumer.py
+.venv/bin/python3 app_producer_consumer.py
 
 # 启动时不立即执行一次
-python app_producer_consumer.py --no-immediate
+.venv/bin/python3 app_producer_consumer.py --no-immediate
 
 # 只执行一次后自动退出
-python app_producer_consumer.py --once
+.venv/bin/python3 app_producer_consumer.py --once
 
 # 只启动指定 producer（逗号分隔）
-python app_producer_consumer.py --producers crypto,usstock_daily
+.venv/bin/python3 app_producer_consumer.py --producers usstock_minute,crypto
 
 # 列出所有可选 producer 后退出
-python app_producer_consumer.py --list-producers
+.venv/bin/python3 app_producer_consumer.py --list-producers
 ```
 
 日志写入 `app.log` 并同时打印到控制台。
 
 ## 扩展
 
-- **新增生产者**：继承 `core/producers/base_producer.py:BaseProducer`，实现 `produce_data()` 与 `create_trigger()`，在 `app_producer_consumer.py:setup_producers` 中注册。
+- **新增生产者**：
+  1. 继承 `core/producers/base_producer.py:BaseProducer`，只需实现 `produce_data()`；触发器由外部注入，不要在类里写 cron。
+  2. 在 `app_producer_consumer.py:PRODUCER_REGISTRY` 加一条 `"key": (YourProducer, {extra_kwargs})`。
+  3. 在 `config/settings.py:PRODUCER_SCHEDULE` 加该 key 的触发器配置（或 `None` 表示无调度）。
 - **新增消费者**：继承 `core/consumers/base_consumer.py:BaseConsumer`，声明关心的 `MessageType` 并实现 `process_message()`。
 - **新增数据源**：继承 `core/fetchers/base_fetcher.py:BaseFetcher`。
