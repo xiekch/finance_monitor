@@ -24,14 +24,18 @@ from config.settings import PRODUCER_SCHEDULE
 
 # (producer_cls, 构造时附加的 kwargs)；trigger 由 PRODUCER_SCHEDULE 单独提供
 PRODUCER_REGISTRY: dict[str, tuple[type, dict]] = {
-    "astock":         (AStockProducer, {}),
+    "astock_minute":  (AStockProducer,  {"frequency": "minute"}),
+    "astock_daily":   (AStockProducer,  {"frequency": "daily"}),
+    "astock_weekly":  (AStockProducer,  {"frequency": "weekly"}),
     "usstock_minute": (USStockProducer, {"frequency": "minute"}),
     "usstock_daily":  (USStockProducer, {"frequency": "daily"}),
     "usstock_weekly": (USStockProducer, {"frequency": "weekly"}),
-    "crypto":         (CryptoProducer, {}),
+    "crypto_minute":  (CryptoProducer,  {"frequency": "minute"}),
+    "crypto_daily":   (CryptoProducer,  {"frequency": "daily"}),
+    "crypto_weekly":  (CryptoProducer,  {"frequency": "weekly"}),
 }
 
-DEFAULT_PRODUCERS: list[str] = ["usstock_daily", "crypto"]
+DEFAULT_PRODUCERS: list[str] = ["usstock_daily", "crypto_daily"]
 
 
 _TRIGGER_TYPES = {

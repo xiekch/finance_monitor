@@ -96,7 +96,7 @@ python3 -m venv .venv
 ### 启动
 
 ```bash
-# 正常调度模式：常驻运行，按 cron 触发（默认 producer：usstock_daily + crypto）
+# 正常调度模式：常驻运行，按 cron 触发（默认 producer：usstock_daily + crypto_daily）
 .venv/bin/python3 app_producer_consumer.py
 
 # 启动时不立即执行一次
@@ -106,7 +106,7 @@ python3 -m venv .venv
 .venv/bin/python3 app_producer_consumer.py --once
 
 # 只启动指定 producer（逗号分隔）
-.venv/bin/python3 app_producer_consumer.py --producers usstock_minute,crypto
+.venv/bin/python3 app_producer_consumer.py --producers usstock_minute,crypto_minute
 
 # 列出所有可选 producer 后退出
 .venv/bin/python3 app_producer_consumer.py --list-producers

@@ -92,12 +92,29 @@ TASK_CONFIG = {
 # - type: 'cron' | 'interval'，对应 APScheduler 的 CronTrigger / IntervalTrigger
 # - kwargs: 传给对应 trigger 构造函数的参数
 # - None: 表示该 producer 无定时调度（只能 run_immediately / ignore_schedule 使用）
+# 所有时间为本机时区（一般是北京时间）。
 PRODUCER_SCHEDULE = {
-    'astock': None,
+    # A 股
+    'astock_minute': {
+        'type': 'cron',
+        # 交易时段 9:30-15:00 简化为 9-14 整点段每 5 分钟，工作日
+        'kwargs': {'hour': '9-14', 'minute': '*/5', 'day_of_week': 'mon-fri'},
+    },
+    'astock_daily': {
+        'type': 'cron',
+        # 收盘后 15:30，工作日
+        'kwargs': {'hour': 15, 'minute': 30, 'day_of_week': 'mon-fri'},
+    },
+    'astock_weekly': {
+        'type': 'cron',
+        # 每周六早 8 点
+        'kwargs': {'day_of_week': 'sat', 'hour': 8, 'minute': 0},
+    },
+    # 美股
     'usstock_minute': {
         'type': 'cron',
         # 北京时间晚 9 点到次日凌晨 4 点（美东 9:30-16:00），每 5 分钟
-        'kwargs': {'hour': '21-4', 'minute': '*/5', 'day_of_week': 'mon-fri'},
+        'kwargs': {'hour': '21-23,0-4', 'minute': '*/5', 'day_of_week': 'mon-fri'},
     },
     'usstock_daily': {
         'type': 'cron',
@@ -109,9 +126,18 @@ PRODUCER_SCHEDULE = {
         # 每周一北京时间早 6 点
         'kwargs': {'day_of_week': 'mon', 'hour': 6, 'minute': 0, 'second': 0},
     },
-    'crypto': {
+    # 加密货币（24/7 市场）
+    'crypto_minute': {
         'type': 'cron',
-        'kwargs': {'hour': 5, 'minute': 0, 'second': 0, 'day_of_week': 'mon-fri'},
+        'kwargs': {'minute': '*/5'},
+    },
+    'crypto_daily': {
+        'type': 'cron',
+        'kwargs': {'hour': 5, 'minute': 0, 'second': 0},
+    },
+    'crypto_weekly': {
+        'type': 'cron',
+        'kwargs': {'day_of_week': 'mon', 'hour': 5, 'minute': 0},
     },
 }
 
