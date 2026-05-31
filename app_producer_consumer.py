@@ -17,6 +17,17 @@ from core.message_queue import mq
 from core.message_types import MessageType, SystemEventMessage
 
 
+PRODUCER_REGISTRY: dict[str, type] = {
+    "astock":         AStockProducer,
+    "usstock_minute": USStockMinuteProducer,
+    "usstock_daily":  USStockDailyProducer,
+    "usstock_weekly": USStockWeeklyProducer,
+    "crypto":         CryptoProducer,
+}
+
+DEFAULT_PRODUCERS: list[str] = ["usstock_daily", "crypto"]
+
+
 class ProducerConsumerApp:
     """基于生产者-消费者模式的市场监控应用"""
 
