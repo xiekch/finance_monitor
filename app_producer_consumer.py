@@ -14,12 +14,15 @@ from apscheduler.triggers.interval import IntervalTrigger
 from core.producers.astock_producer import AStockProducer
 from core.producers.usstock_producer import USStockProducer
 from core.producers.crypto_producer import CryptoProducer
+from core.producers.x_briefing_producer import XBriefingProducer
 from core.consumers.volatility_consumer import VolatilityConsumer
 from core.consumers.notification_consumer import NotificationConsumer
 from core.consumers.storage_consumer import StorageConsumer
+from core.consumers.ai_briefing_consumer import AIBriefingConsumer
 from core.message_queue import mq
 from core.message_types import MessageType, SystemEventMessage
 from config.settings import PRODUCER_SCHEDULE
+from config.social import SOCIAL_CONFIG, assert_social_env_ready
 
 
 # (producer_cls, 构造时附加的 kwargs)；trigger 由 PRODUCER_SCHEDULE 单独提供
@@ -33,6 +36,7 @@ PRODUCER_REGISTRY: dict[str, tuple[type, dict]] = {
     "crypto_minute":  (CryptoProducer,  {"frequency": "minute"}),
     "crypto_daily":   (CryptoProducer,  {"frequency": "daily"}),
     "crypto_weekly":  (CryptoProducer,  {"frequency": "weekly"}),
+    "x_briefing":     (XBriefingProducer, {}),
 }
 
 DEFAULT_PRODUCERS: list[str] = ["usstock_daily", "crypto_daily"]
@@ -99,6 +103,16 @@ class ProducerConsumerApp:
             run_immediately: run once on startup.
             ignore_schedule: run only once, skip scheduling.
         """
+        # 如果 x_briefing 在请求列表里但 SOCIAL_CONFIG.enabled=False，剔除并 warn
+        if "x_briefing" in producer_keys and not SOCIAL_CONFIG["enabled"]:
+            logging.warning(
+                "[App] SOCIAL_CONFIG.enabled=False，已从启动列表中剔除 x_briefing"
+            )
+            producer_keys = [k for k in producer_keys if k != "x_briefing"]
+        # 若 x_briefing 启用，做启动期 fail-fast 检查（缺 env / 空白名单）
+        if "x_briefing" in producer_keys:
+            assert_social_env_ready()
+
         for key in producer_keys:
             cls, extra_kwargs = PRODUCER_REGISTRY[key]
             trigger = build_trigger(PRODUCER_SCHEDULE.get(key))
@@ -125,6 +139,13 @@ class ProducerConsumerApp:
         # 通知发送消费者
         notification_consumer = NotificationConsumer()
         self.consumers.append(notification_consumer)
+
+        # AI 简报消费者：仅在 SOCIAL_CONFIG.enabled=True 时启用
+        if SOCIAL_CONFIG["enabled"]:
+            self.consumers.append(AIBriefingConsumer())
+            logging.info("[App] AIBriefingConsumer 已启用")
+        else:
+            logging.info("[App] SOCIAL_CONFIG.enabled=False，AIBriefingConsumer 跳过")
 
         print("消费者设置完成")
 

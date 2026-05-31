@@ -15,6 +15,8 @@ class MessageType(Enum):
     TASK_REQUEST = "task_request"  # 任务请求
     TASK_RESULT = "task_result"  # 任务结果
     SYSTEM_EVENT = "system_event"  # 系统事件
+    SOCIAL_POST_BATCH = "social_post_batch"   # 一批新拉到的推文
+    AI_BRIEFING = "ai_briefing"               # LLM 已生成的简报
 
 
 class FrequencyType(Enum):
@@ -144,6 +146,46 @@ class SystemEventMessage(BaseMessage):
         message_type=MessageType.SYSTEM_EVENT
     ):
 
+        super().__init__(
+            message_type=message_type,
+            timestamp=timestamp,
+            source=source,
+            payload=payload,
+            message_id=message_id,
+        )
+
+
+@dataclass
+class SocialPostBatchMessage(BaseMessage):
+    """一批新拉到的推文，作为 LLM 输入的原料。"""
+    def __init__(
+        self,
+        payload: Dict[str, Any],
+        source: str,
+        timestamp: Optional[datetime] = None,
+        message_id: Optional[str] = None,
+        message_type: MessageType = MessageType.SOCIAL_POST_BATCH,
+    ):
+        super().__init__(
+            message_type=message_type,
+            timestamp=timestamp,
+            source=source,
+            payload=payload,
+            message_id=message_id,
+        )
+
+
+@dataclass
+class AIBriefingMessage(BaseMessage):
+    """LLM 已生成的简报。"""
+    def __init__(
+        self,
+        payload: Dict[str, Any],
+        source: str,
+        timestamp: Optional[datetime] = None,
+        message_id: Optional[str] = None,
+        message_type: MessageType = MessageType.AI_BRIEFING,
+    ):
         super().__init__(
             message_type=message_type,
             timestamp=timestamp,

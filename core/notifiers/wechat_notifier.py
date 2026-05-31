@@ -83,5 +83,30 @@ class WeChatNotifier:
             message += "\n📈 主要波动:\n"
             for mover in summary_data['top_movers'][:5]:  # 显示前5个
                 message += f"{mover['symbol']}: {mover['change']:+.2f}%\n"
-        
+
         return self._send_wecom_message(message)
+
+    def send_markdown(self, content: str, max_chars: int = 3500) -> bool:
+        """发送任意 markdown 内容。超长按字符截断并附提示。"""
+        if not content:
+            logging.warning("[WeChatNotifier] send_markdown: 空内容，跳过发送")
+            return False
+        body = content
+        if len(body) > max_chars:
+            body = body[:max_chars] + "\n\n_（内容过长已截断，完整版见 SQLite briefings 表）_"
+        headers = {"Content-Type": "application/json"}
+        data = {"msgtype": "markdown", "markdown": {"content": body}}
+        try:
+            response = self.session.post(
+                self.webhook_url, headers=headers, data=json.dumps(data), timeout=10,
+            )
+            if response.status_code == 200:
+                logging.info(f"[WeChatNotifier] markdown 发送成功，长度={len(body)}")
+                return True
+            logging.error(
+                f"[WeChatNotifier] markdown 发送失败: {response.status_code} - {response.text}"
+            )
+            return False
+        except Exception as e:
+            logging.error(f"[WeChatNotifier] markdown 发送异常: {e}")
+            return False

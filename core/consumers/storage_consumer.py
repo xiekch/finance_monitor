@@ -1,26 +1,74 @@
-from typing import Dict, Any
-from datetime import datetime
+import json
 import logging
-from .base_consumer import BaseConsumer
-from core.message_types import BaseMessage, PriceDataMessage, MessageType
+from datetime import datetime
+from typing import Dict
+
+from core.consumers.base_consumer import BaseConsumer
+from core.message_types import (
+    MessageType,
+    PriceDataMessage,
+    SocialPostBatchMessage,
+    AIBriefingMessage,
+)
 from models.market_data import PriceData, MarketDataDB
+from models.social_data import SocialPost, SocialPostStore, Briefing
+
 
 class StorageConsumer(BaseConsumer):
-    """数据存储消费者"""
-    
+    """数据存储消费者：行情 + 推文 + 简报"""
+
     def __init__(self):
-        super().__init__("StorageConsumer", [MessageType.PRICE_DATA, MessageType.HISTORICAL_PRICE_DATA])
+        super().__init__("StorageConsumer", [
+            MessageType.PRICE_DATA,
+            MessageType.HISTORICAL_PRICE_DATA,
+            MessageType.SOCIAL_POST_BATCH,
+            MessageType.AI_BRIEFING,
+        ])
         self.db = MarketDataDB()
-    
+        self.social_store = SocialPostStore()
+
     def process_message(self, message: Dict):
-        """处理价格数据消息，保存到数据库"""
+        mt = MessageType(message["message_type"])
+        if mt in (MessageType.PRICE_DATA, MessageType.HISTORICAL_PRICE_DATA):
+            self._handle_price(message)
+        elif mt == MessageType.SOCIAL_POST_BATCH:
+            self._handle_social_batch(message)
+        elif mt == MessageType.AI_BRIEFING:
+            self._handle_briefing(message)
+
+    def _handle_price(self, message: Dict):
         price_message = PriceDataMessage.from_dict(message)
-        
-        # 转换为PriceData对象
         price_data = PriceData(**price_message.payload)
-        
-        # 保存到数据库
         if self.db.save_price_data(price_data):
             logging.info(f"[{self.consumer_name}] 数据已保存: {price_data.symbol} {price_data}")
         else:
             logging.info(f"[{self.consumer_name}] 数据已存在，无需保存: {price_data.symbol} {price_data}")
+
+    def _handle_social_batch(self, message: Dict):
+        msg = SocialPostBatchMessage.from_dict(message)
+        posts = [SocialPost.from_dict(p) for p in msg.payload.get("posts", [])]
+        n = self.social_store.save_posts(posts)
+        logging.info(
+            f"[{self.consumer_name}] social_posts batch saved: "
+            f"new={n} total_in_batch={len(posts)}"
+        )
+
+    def _handle_briefing(self, message: Dict):
+        msg = AIBriefingMessage.from_dict(message)
+        p = msg.payload
+        briefing = Briefing(
+            created_at=p.get("created_at") or datetime.now().isoformat(),
+            window_hours=p.get("window_hours", 0),
+            source_post_ids=p.get("source_post_ids", []),
+            markdown=p.get("markdown", ""),
+            sections_json=json.dumps(p.get("sections", [])),
+            model=(p.get("stats") or {}).get("model", ""),
+            input_tokens=(p.get("stats") or {}).get("input_tokens", 0),
+            output_tokens=(p.get("stats") or {}).get("output_tokens", 0),
+            degraded=bool(p.get("degraded", False)),
+            error=p.get("error"),
+        )
+        bid = self.social_store.save_briefing(briefing)
+        logging.info(
+            f"[{self.consumer_name}] briefing saved id={bid} degraded={briefing.degraded}"
+        )

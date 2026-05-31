@@ -113,6 +113,55 @@ python3 -m venv .venv
 
 日志写入 `app.log` 并同时打印到控制台。
 
+## X 推文 AI 简报
+
+并行链路：每天按 cron 从配置的 X 账号白名单拉取增量推文 → 调 LLM 聚合成 markdown 简报 → 通过现有企微 webhook 推送；原始推文与简报均落 SQLite。
+
+### 启动
+
+```bash
+# 单独跑（每天按 SOCIAL_CONFIG["cron_hours"] 触发）
+python app_producer_consumer.py --producers x_briefing
+
+# 与行情 producer 一起跑
+python app_producer_consumer.py --producers crypto_daily,usstock_daily,x_briefing
+
+# 立即跑一次（联调用；since_id 已更新后再跑会拉到 0 条 → 不重复推送）
+python app_producer_consumer.py --producers x_briefing --once
+```
+
+### 环境变量（追加到 `.env`）
+
+```env
+DASHSCOPE_API_KEY=...            # 阿里百炼 / 通义千问 API key
+SOCIALDATA_API_KEY=...           # 第三方 X 聚合服务的 key
+```
+
+### 配置位置 `config/social.py`
+
+主要字段：
+
+- `enabled`：总开关。`False` 时 `XBriefingProducer` / `AIBriefingConsumer` 都不实例化
+- `whitelist`：关注的 X 账号列表（不带 `@`）
+- `cron_hours`：简报时段，例 `"8,20"` 表示每天 8 点和 20 点各一次
+- `window_hours`：每次简报覆盖的回看窗口（仅作为 LLM prompt 上下文，不影响 since_id 增量）
+- `prompt_template` / `user_prompt_extra`：LLM prompt，可调
+- `social_provider`：第三方 X 聚合服务，默认占位 `socialdata.tools`，按最终选定服务调整
+- `llm_provider`：LLM，默认 `tongyi`（阿里百炼 ChatTongyi via langchain），`model` 默认 `qwen-plus`
+- `push_max_chars`：推送给企微的字符上限（4096 字节内安全冗余）
+
+### 数据落地（共用 `market_data.db`）
+
+- `social_posts` 表：抓到的推文，`post_id` 为主键自动幂等去重
+- `briefings` 表：每次简报，含 markdown / sections / token 用量；`degraded=1` 表示 LLM 失败时的降级简报
+
+### 失败行为
+
+- 单账号抓取失败：跳过该账号，记 warning，其他账号继续
+- 全部账号失败 / 拉到 0 条：不发简报消息，下次 cron 重试
+- LLM 失败：发一条降级简报到企微（说明哪几个账号收到多少条 + 错误信息）+ `briefings` 表记 `degraded=1`
+- 推送失败：仅记 error log；简报已落库，可查询 `briefings` 表手工补推
+
 ## 扩展
 
 - **新增生产者**：

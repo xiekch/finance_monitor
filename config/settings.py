@@ -132,6 +132,9 @@ PRODUCER_SCHEDULE = {
         'type': 'cron',
         'kwargs': {'day_of_week': 'mon', 'hour': 5, 'minute': 0},
     },
+    # X 简报 producer 自己从 SOCIAL_CONFIG['cron_hours'] 构造触发器；
+    # 此处置 None 让 build_trigger 不注入，由 producer fallback。
+    'x_briefing': None,
 }
 
 # 数据库配置

@@ -1,5 +1,8 @@
 aiohttp
 apscheduler
+dashscope
+langchain-community
+langchain-core
 pandas
 python-dotenv
 pytz
