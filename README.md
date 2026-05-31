@@ -75,7 +75,6 @@ REDIS_PASSWORD=
 
 - `MONITOR_CONFIG`：按 `minute / daily / weekly` × `stocks / crypto / futures` 配置
 - `PRODUCER_SCHEDULE`：按 producer key 配置 APScheduler 触发器；形如 `{"type": "cron", "kwargs": {...}}`，`None` 表示无调度。运行频次与 producer 类解耦，改时间不用动代码。
-- `TASK_CONFIG`：日级、周级任务执行时间（旧配置，部分场景仍在使用）
 - `PROXY` / `PROXY_URL`：海外行情抓取的本地代理（默认 `http://127.0.0.1:7897`）
 
 ## 运行

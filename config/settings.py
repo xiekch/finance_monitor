@@ -80,13 +80,6 @@ MONITOR_CONFIG = {
     }
 }
 
-# 任务调度配置
-TASK_CONFIG = {
-    'minute_interval': 1,  # 分钟级任务间隔
-    'daily_time': '16:05',  # 日频任务执行时间
-    'weekly_time': '09:00'   # 周频任务执行时间
-}
-
 # Producer 调度配置
 # 与 PRODUCER_REGISTRY 的 key 对应；value 描述触发器类型与参数。
 # - type: 'cron' | 'interval'，对应 APScheduler 的 CronTrigger / IntervalTrigger
