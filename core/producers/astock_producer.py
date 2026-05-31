@@ -1,7 +1,8 @@
 import asyncio
-from typing import Sequence, List
+from typing import Sequence, List, Optional
 from datetime import datetime
 
+from apscheduler.triggers.base import BaseTrigger
 from .base_producer import BaseProducer
 from core.message_types import PriceDataMessage, FrequencyType, MessageType
 from core.fetchers.stock_fetcher import StockFetcher
@@ -9,9 +10,14 @@ from config.settings import API_CONFIG, MONITOR_CONFIG
 
 class AStockProducer(BaseProducer):
     """A股数据生产者"""
-    
-    def __init__(self):
-        super().__init__("AStockProducer")
+
+    def __init__(
+        self,
+        trigger: Optional[BaseTrigger] = None,
+        run_immediately: bool = False,
+        ignore_schedule: bool = False,
+    ):
+        super().__init__("AStockProducer", trigger, run_immediately, ignore_schedule)
         self.stock_fetcher = StockFetcher(API_CONFIG)
         self.frequency_mapping = {
             'minute': FrequencyType.MINUTE,

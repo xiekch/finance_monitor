@@ -5,6 +5,12 @@ from datetime import datetime
 import time
 import asyncio
 import os
+from typing import Optional
+
+from apscheduler.triggers.base import BaseTrigger
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
+
 from core.producers.astock_producer import AStockProducer
 from core.producers.usstock_minute_producer import USStockMinuteProducer
 from core.producers.usstock_weekly_producer import USStockWeeklyProducer
@@ -15,6 +21,7 @@ from core.consumers.notification_consumer import NotificationConsumer
 from core.consumers.storage_consumer import StorageConsumer
 from core.message_queue import mq
 from core.message_types import MessageType, SystemEventMessage
+from config.settings import PRODUCER_SCHEDULE
 
 
 PRODUCER_REGISTRY: dict[str, type] = {
@@ -26,6 +33,25 @@ PRODUCER_REGISTRY: dict[str, type] = {
 }
 
 DEFAULT_PRODUCERS: list[str] = ["usstock_daily", "crypto"]
+
+
+_TRIGGER_TYPES = {
+    "cron": CronTrigger,
+    "interval": IntervalTrigger,
+}
+
+
+def build_trigger(spec: Optional[dict]) -> Optional[BaseTrigger]:
+    """根据配置构造 APScheduler 触发器。spec=None 表示无调度。"""
+    if spec is None:
+        return None
+    try:
+        trigger_cls = _TRIGGER_TYPES[spec["type"]]
+    except KeyError as e:
+        raise ValueError(
+            f"未知 trigger 类型: {spec.get('type')}; 可选: {sorted(_TRIGGER_TYPES)}"
+        ) from e
+    return trigger_cls(**spec.get("kwargs", {}))
 
 
 class ProducerConsumerApp:
@@ -62,23 +88,22 @@ class ProducerConsumerApp:
     ):
         """Instantiate producers selected by short key.
 
+        触发器从 config.settings.PRODUCER_SCHEDULE 读取并注入；
+        producer 类本身不再持有调度信息。
+
         Args:
             producer_keys: keys from PRODUCER_REGISTRY to enable.
             run_immediately: run once on startup.
             ignore_schedule: run only once, skip scheduling.
         """
-        extra_kwargs = {
-            "usstock_minute": {"interval_minutes": 5},
-        }
-
         for key in producer_keys:
             cls = PRODUCER_REGISTRY[key]
-            kwargs = {
-                "run_immediately": run_immediately,
-                "ignore_schedule": ignore_schedule,
-                **extra_kwargs.get(key, {}),
-            }
-            self.producers.append(cls(**kwargs))
+            trigger = build_trigger(PRODUCER_SCHEDULE.get(key))
+            self.producers.append(cls(
+                trigger=trigger,
+                run_immediately=run_immediately,
+                ignore_schedule=ignore_schedule,
+            ))
 
         logging.info(f"已启用 producer: {producer_keys}")
         print(f"生产者设置完成: {producer_keys}")

@@ -1,7 +1,7 @@
-from typing import List
+from typing import List, Optional
 from datetime import datetime, timedelta
 import logging
-from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.base import BaseTrigger
 from .base_producer import BaseProducer
 from core.message_types import PriceDataMessage, FrequencyType, MessageType
 from core.fetchers.us_stock_yf_fetcher import USStockYfFetcher
@@ -10,23 +10,16 @@ from config.settings import API_CONFIG, MONITOR_CONFIG
 
 class USStockWeeklyProducer(BaseProducer):
     """美股周级数据生产者"""
-    
-    def __init__(self, run_immediately: bool = False, ignore_schedule: bool = False):
-        super().__init__("USStockWeeklyProducer", run_immediately, ignore_schedule)
+
+    def __init__(
+        self,
+        trigger: Optional[BaseTrigger] = None,
+        run_immediately: bool = False,
+        ignore_schedule: bool = False,
+    ):
+        super().__init__("USStockWeeklyProducer", trigger, run_immediately, ignore_schedule)
         self.us_stock_fetcher = USStockYfFetcher(API_CONFIG)
-    
-    def create_trigger(self) -> CronTrigger:
-        """
-        创建周级调度触发器
-        每周一早上运行（获取上周数据）
-        """
-        return CronTrigger(
-            day_of_week='mon',  # 每周一
-            hour=6,             # 北京时间早上6点
-            minute=0,
-            second=0
-        )
-    
+
     async def produce_data(self) -> List[PriceDataMessage]:
         """生产美股周级数据"""
         messages = []

@@ -87,6 +87,34 @@ TASK_CONFIG = {
     'weekly_time': '09:00'   # 周频任务执行时间
 }
 
+# Producer 调度配置
+# 与 PRODUCER_REGISTRY 的 key 对应；value 描述触发器类型与参数。
+# - type: 'cron' | 'interval'，对应 APScheduler 的 CronTrigger / IntervalTrigger
+# - kwargs: 传给对应 trigger 构造函数的参数
+# - None: 表示该 producer 无定时调度（只能 run_immediately / ignore_schedule 使用）
+PRODUCER_SCHEDULE = {
+    'astock': None,
+    'usstock_minute': {
+        'type': 'cron',
+        # 北京时间晚 9 点到次日凌晨 4 点（美东 9:30-16:00），每 5 分钟
+        'kwargs': {'hour': '21-4', 'minute': '*/5', 'day_of_week': 'mon-fri'},
+    },
+    'usstock_daily': {
+        'type': 'cron',
+        # 北京时间凌晨 5 点，工作日
+        'kwargs': {'hour': 5, 'minute': 0, 'second': 0, 'day_of_week': 'mon-fri'},
+    },
+    'usstock_weekly': {
+        'type': 'cron',
+        # 每周一北京时间早 6 点
+        'kwargs': {'day_of_week': 'mon', 'hour': 6, 'minute': 0, 'second': 0},
+    },
+    'crypto': {
+        'type': 'cron',
+        'kwargs': {'hour': 5, 'minute': 0, 'second': 0, 'day_of_week': 'mon-fri'},
+    },
+}
+
 # 数据库配置
 DATABASE_CONFIG = {
     'path': 'market_data.db',

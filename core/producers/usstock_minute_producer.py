@@ -1,7 +1,7 @@
-from typing import List
+from typing import List, Optional
 from datetime import datetime, timedelta
 import logging
-from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.base import BaseTrigger
 from .base_producer import BaseProducer
 from core.message_types import PriceDataMessage, FrequencyType, MessageType
 from core.fetchers.us_stock_yf_fetcher import USStockYfFetcher
@@ -10,23 +10,16 @@ from config.settings import API_CONFIG, MONITOR_CONFIG
 
 class USStockMinuteProducer(BaseProducer):
     """美股分钟级数据生产者"""
-    
-    def __init__(self, interval_minutes: int = 5, run_immediately: bool = False, ignore_schedule: bool = False):
-        super().__init__(f"USStockMinuteProducer_{interval_minutes}min", run_immediately, ignore_schedule)
+
+    def __init__(
+        self,
+        trigger: Optional[BaseTrigger] = None,
+        run_immediately: bool = False,
+        ignore_schedule: bool = False,
+    ):
+        super().__init__("USStockMinuteProducer", trigger, run_immediately, ignore_schedule)
         self.us_stock_fetcher = USStockYfFetcher(API_CONFIG)
-        self.interval_minutes = interval_minutes
-    
-    def create_trigger(self) -> CronTrigger:
-        """
-        创建分钟级调度触发器
-        在美股交易时间内每N分钟运行一次
-        """
-        return CronTrigger(
-            hour='21-4',  # 北京时间晚上9点到次日凌晨4点（美东时间9:30-16:00）
-            minute=f'*/{self.interval_minutes}',
-            day_of_week='mon-fri'  # 只在周一到周五运行
-        )
-    
+
     async def produce_data(self) -> List[PriceDataMessage]:
         """生产美股分钟级数据"""
         messages = []

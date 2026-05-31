@@ -1,7 +1,7 @@
-from typing import Sequence, List
+from typing import Sequence, List, Optional
 from datetime import datetime, timedelta
 import logging
-from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.base import BaseTrigger
 from .base_producer import BaseProducer
 from core.message_types import PriceDataMessage, FrequencyType, MessageType
 from core.fetchers.us_stock_yf_fetcher import USStockYfFetcher
@@ -10,23 +10,16 @@ from config.settings import API_CONFIG, MONITOR_CONFIG
 
 class USStockDailyProducer(BaseProducer):
     """美股日级数据生产者"""
-    
-    def __init__(self, run_immediately: bool = False, ignore_schedule: bool = False):
-        super().__init__("USStockDailyProducer", run_immediately, ignore_schedule)
+
+    def __init__(
+        self,
+        trigger: Optional[BaseTrigger] = None,
+        run_immediately: bool = False,
+        ignore_schedule: bool = False,
+    ):
+        super().__init__("USStockDailyProducer", trigger, run_immediately, ignore_schedule)
         self.us_stock_fetcher = USStockYfFetcher(API_CONFIG)
-    
-    def create_trigger(self) -> CronTrigger:
-        """
-        创建日级调度触发器
-        每天美股收盘后运行（北京时间凌晨5点）
-        """
-        return CronTrigger(
-            hour=5,           # 北京时间凌晨5点
-            minute=0,
-            second=0,
-            day_of_week='mon-fri'  # 只在工作日运行
-        )
-    
+
     async def produce_data(self) -> Sequence[PriceDataMessage]:
         """生产美股日级数据"""
         messages = []
