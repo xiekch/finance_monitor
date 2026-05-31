@@ -80,7 +80,7 @@ REDIS_PASSWORD=
 ## 运行
 
 ```bash
-# 正常调度模式：常驻运行，按 cron 触发
+# 正常调度模式：常驻运行，按 cron 触发（默认 producer：usstock_daily + crypto）
 python app_producer_consumer.py
 
 # 启动时不立即执行一次
@@ -88,6 +88,12 @@ python app_producer_consumer.py --no-immediate
 
 # 只执行一次后自动退出
 python app_producer_consumer.py --once
+
+# 只启动指定 producer（逗号分隔）
+python app_producer_consumer.py --producers crypto,usstock_daily
+
+# 列出所有可选 producer 后退出
+python app_producer_consumer.py --list-producers
 ```
 
 日志写入 `app.log` 并同时打印到控制台。
