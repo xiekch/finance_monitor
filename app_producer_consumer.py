@@ -11,16 +11,16 @@ from apscheduler.triggers.base import BaseTrigger
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from core.producers.astock_producer import AStockProducer
-from core.producers.usstock_producer import USStockProducer
-from core.producers.crypto_producer import CryptoProducer
-from core.producers.x_briefing_producer import XBriefingProducer
-from core.consumers.volatility_consumer import VolatilityConsumer
-from core.consumers.notification_consumer import NotificationConsumer
-from core.consumers.storage_consumer import StorageConsumer
-from core.consumers.ai_briefing_consumer import AIBriefingConsumer
-from core.message_queue import mq
-from core.message_types import MessageType, SystemEventMessage
+from producers.astock_producer import AStockProducer
+from producers.usstock_producer import USStockProducer
+from producers.crypto_producer import CryptoProducer
+from producers.x_briefing_producer import XBriefingProducer
+from consumers.volatility_consumer import VolatilityConsumer
+from consumers.notification_consumer import NotificationConsumer
+from consumers.storage_consumer import StorageConsumer
+from consumers.ai_briefing_consumer import AIBriefingConsumer
+from message_queue import mq
+from models.messages import MessageType, SystemEventMessage
 from config.settings import PRODUCER_SCHEDULE
 from config.social import SOCIAL_CONFIG, assert_social_env_ready
 
