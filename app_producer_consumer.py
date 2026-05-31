@@ -244,10 +244,9 @@ class ProducerConsumerApp:
             self.stop_system()
 
 
-if __name__ == "__main__":
+def parse_args(argv: list[str] | None = None):
     import argparse
 
-    # 命令行参数解析
     parser = argparse.ArgumentParser(description="市场监控系统")
     parser.add_argument(
         "--no-immediate", action="store_true", default=False, help="不立即执行生产任务"
@@ -255,17 +254,65 @@ if __name__ == "__main__":
     parser.add_argument(
         "--once", action="store_true", default=False, help="只执行一次，忽略调度"
     )
+    parser.add_argument(
+        "-p", "--producers",
+        type=str,
+        default=None,
+        help=f"逗号分隔的 producer 短名，可选: {sorted(PRODUCER_REGISTRY)}; 不传则使用默认 {DEFAULT_PRODUCERS}",
+    )
+    parser.add_argument(
+        "--list-producers",
+        action="store_true",
+        default=False,
+        help="列出所有可选 producer 后退出",
+    )
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+
+    if args.producers is None:
+        args.producer_keys = list(DEFAULT_PRODUCERS)
+    else:
+        raw = [k.strip() for k in args.producers.split(",")]
+        keys = [k for k in raw if k]
+        if not keys:
+            parser.error("--producers 不能为空")
+
+        unknown = sorted(set(keys) - PRODUCER_REGISTRY.keys())
+        if unknown:
+            parser.error(
+                f"未知 producer: {unknown}; 可选: {sorted(PRODUCER_REGISTRY)}"
+            )
+
+        seen = set()
+        deduped = []
+        for k in keys:
+            if k in seen:
+                continue
+            seen.add(k)
+            deduped.append(k)
+        if len(deduped) != len(keys):
+            logging.warning(f"producers 中存在重复 key，已去重: {keys} -> {deduped}")
+        args.producer_keys = deduped
+
+    return args
+
+
+if __name__ == "__main__":
+    args = parse_args()
+
+    if args.list_producers:
+        print("可选 producer:")
+        for key, cls in PRODUCER_REGISTRY.items():
+            print(f"  {key:16s} -> {cls.__name__}")
+        sys.exit(0)
 
     app = ProducerConsumerApp()
 
-    # 根据命令行参数设置运行模式
     run_immediately = not args.no_immediate
     ignore_schedule = args.once
 
     app.run(
-        producer_keys=DEFAULT_PRODUCERS,
+        producer_keys=args.producer_keys,
         run_immediately=run_immediately,
         ignore_schedule=ignore_schedule,
     )
