@@ -20,7 +20,9 @@ API_CONFIG = {
         'base_url': 'https://api.finage.co.uk'
     },
     'binance': {
-        'base_url': 'https://api.binance.com',
+        # 大陆直连 api.binance.com 会被 RST；data-api.binance.vision
+        # 是 Binance 官方公开行情镜像，无需 key、通常无地理封锁
+        'base_url': 'https://data-api.binance.vision',
         'websocket_url': 'wss://stream.binance.com:9443'
     }
 }
