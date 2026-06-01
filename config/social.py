@@ -22,13 +22,15 @@ SOCIAL_CONFIG = {
     "fetch_limit_per_user": 50,
 
     # X 数据源。clients/social_client.py 按 name 派发到对应 client 类。
-    # - twitterapi_io: free tier 限速 1 req / 5 sec
+    # - twitterapi_io: free tier 限速 1 req / 5 sec；fetch_limit_per_user 通过 cursor 翻页凑齐
     # - socialdata: 按次付费，~$0.0002/req
     "social_provider": {
         "name": "twitterapi_io",
         "api_key_env": "TWITTERAPI_IO_KEY",
         "base_url": "https://api.twitterapi.io",
         "timeout_sec": 10,
+        # 是否拉取 reply 推文。True 时一并抓 @某人 的回复（quote_tweet 不影响）
+        "include_replies": False,
     },
 
     # LLM
@@ -40,7 +42,8 @@ SOCIAL_CONFIG = {
         "model": "qwen3.6-plus",
         "temperature": 0.3,
         "max_tokens": 8192,
-        "timeout_sec": 60,
+        # qwen3.6-plus 是 thinking 模型，处理 50 条推文 + 大 max_tokens 经常 60s+；给 180s 兜底
+        "timeout_sec": 180,
     },
 
     # Prompt 主体（占位，后续可按需精修）
