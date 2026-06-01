@@ -3,7 +3,6 @@ import signal
 import sys
 from datetime import datetime
 import time
-import asyncio
 import os
 from typing import Optional
 
@@ -270,29 +269,18 @@ class ProducerConsumerApp:
                 ignore_schedule=ignore_schedule,
             )
 
-            # 如果忽略调度，等待生产任务完成后自动停止
+            # 不再固定 60 秒自动停止；--once 与常驻模式都等 Ctrl+C，
+            # 让 consumer 有充分时间处理完 producer 发出的消息。
+            # ignore_schedule 的语义仍然是"producer 只立即执行一次、不调度"。
             if ignore_schedule:
-                print("忽略调度模式，等待生产任务完成后自动停止...")
-
-                # 运行异步等待
-                async def wait_and_stop():
-                    await asyncio.sleep(60)
-                    print("生产任务完成，自动停止系统...")
-                    self.stop_system()
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(wait_and_stop())
-                loop.close()
+                print("忽略调度模式，producer 已立即执行一次；保持运行以等待 consumer 处理完，按 Ctrl+C 退出。")
             else:
-                # 正常调度模式，保持运行直到接收到停止信号
-                print("正常调度模式，系统持续运行中...")
-                try:
-                    # 保持主线程运行
-                    while self.is_running:
-                        time.sleep(1)
-                except KeyboardInterrupt:
-                    print("\n用户请求停止系统...")
+                print("正常调度模式，系统持续运行中，按 Ctrl+C 退出。")
+            try:
+                while self.is_running:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                print("\n用户请求停止系统...")
 
         except KeyboardInterrupt:
             print("\n用户请求停止系统...")
