@@ -39,7 +39,7 @@ PRODUCER_REGISTRY: dict[str, tuple[type, dict]] = {
     "x_briefing":     (XBriefingProducer, {}),
 }
 
-DEFAULT_PRODUCERS: list[str] = ["usstock_daily", "crypto_daily"]
+DEFAULT_PRODUCERS: list[str] = ["usstock_daily", "crypto_daily", "x_briefing"]
 
 
 def _using_redis_backend() -> bool:
