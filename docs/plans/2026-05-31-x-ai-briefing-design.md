@@ -428,3 +428,81 @@ MVP 暂不实施，后续单独补充。届时建议覆盖：
 8. `app_producer_consumer.py` 注册 `"x_briefing"` + 依赖注入
 9. README + .env 模板
 10. 手工 dry-run 验证
+
+---
+
+## 实施后变更（2026-06-01）
+
+实施过程中遇到 socialdata.tools 充值门槛、Claude API 国内访问慢、qwen-plus 模型识别等实际问题，对原设计做了若干调整。保留以上设计章节作历史，本节列出 **当前实际形态**。
+
+### X 数据源切换
+
+| 维度 | 原设计 | 当前实际 |
+|---|---|---|
+| 默认 provider | `socialdata.tools`（按次付费 ~$0.0002/req，需充值 $5 起） | `twitterapi.io`（有 free tier，单 IP 限速 1 req/5sec） |
+| Client 类 | `SocialDataClient`（保留） | `TwitterApiIoClient`（新增） |
+| 入口派发 | `build_default_social_client()` 直返单实现 | 同名函数按 `SOCIAL_CONFIG["social_provider"]["name"]` 查 `_CLIENT_CLASSES` 注册表派发 |
+
+### twitterapi.io 上 endpoint 选择
+
+讨论过 `/twitter/user/last_tweets` 与 `/twitter/user/tweet_timeline` 两个端点：
+
+| 维度 | `/twitter/user/last_tweets`（当前用的） | `/twitter/user/tweet_timeline` |
+|---|---|---|
+| 入参 `userId` | ✓ | ✓（**只接受 userId**） |
+| 入参 `userName` | ✓ | ✗（需先 `/twitter/user/info` 查 id） |
+| `includeReplies` | ✓ | ✓ |
+| **`includeParentTweet`**（reply 时拿父推文） | ✗ | **✓** |
+| 排序 | 严格 `created_at` desc | 与 Twitter app 显示一致（pinned tweet 可能在前） |
+| 每页 | 20 条（服务端写死，`count` 参数无效） | 20 条 |
+| 翻页 | `cursor`（首次 `""`，响应里有 `next_cursor` / `has_next_page`） | 同 |
+| 文档建议 | "高频拉单账号别用，太烧钱" | 无特别提示 |
+
+选 `last_tweets` 的原因：当前白名单是 `elonmusk` 这种 **大量 quote_tweet** 的账号，`quoted_tweet` 字段已经能拿到上下文，不需要 `includeParentTweet`；同时省一次 `/user/info` 调用和 userId 缓存层。如果未来白名单偏向 reply 大户（sama / karpathy），再换 `tweet_timeline` + userId 缓存。
+
+### 推文上下文拼接（新增）
+
+原设计 `_parse` 直接取顶层 `text`。实测 Musk 大量 quote_tweet 顶层只有 "True/Yes/Bullseye"，转推顶层 text 是被 Twitter 截断的 "RT @x: ..."。**LLM 看到这些没法生成有意义简报**。
+
+`TwitterApiIoClient._parse` 现在调用 `_compose_text_with_context(t)` 把上下文揉进 `text`：
+
+- **转推**：用 `retweeted_tweet.text` 完整原文替换顶层截断；`is_retweet=True`；`referenced_url` 指向原推文
+- **引用**：保留顶层 `text` 并拼 `> @作者: 完整内容`；`is_retweet=False`；`referenced_url` 指向被引推文
+- **普通**：原样
+
+效果验证：50 条 musk 推文 → qwen3.6-plus 生成的简报能正确归因到 `@beffjezos` / `@yunta_tsai` 等 quoted 原作者，主题分组合理。
+
+### LLM 切换
+
+| 维度 | 原设计 | 当前实际 |
+|---|---|---|
+| Provider | Anthropic Claude | 阿里百炼 (DashScope) |
+| Client wrapper | 自写 `AnthropicLLMClient` | `langchain_openai.ChatOpenAI` + `base_url` 指向 DashScope `/compatible-mode/v1` |
+| Model | `claude-haiku-4-5` | `qwen3.6-plus`（thinking 模型） |
+| API key env | `ANTHROPIC_API_KEY` | `DASHSCOPE_API_KEY` |
+| `max_tokens` | 隐式（Claude 默认） | **8192**（thinking 模型要预留思考 token 配额） |
+| `timeout_sec` | 60 | **180**（thinking 模型 50 条推文 ~60s+） |
+
+切换原因：
+1. 国内访问 Claude API 不稳，DashScope 直连快
+2. 原计划 `langchain_community.ChatTongyi` 已 deprecated，且不识别新模型名 `qwen3.6-plus`
+3. OpenAI 兼容路径 + `ChatOpenAI` 是 langchain 阵营推荐的现代写法，`usage_metadata` 字段标准
+
+### 接口翻页与限流
+
+`fetch_user_timeline` 不再单页 50 条，改 cursor 翻页：
+
+- `_PAGE_SIZE = 20`（服务端硬限制）
+- `_RATE_LIMIT_SLEEP = 5.5`（free tier 1 req/5sec，翻第 2 页起 `time.sleep`）
+- `since_id` 仍为 client-side 过滤；一页里发现旧 tweet（id ≤ cutoff）立刻 `hit_boundary=True` 早停，避免无意义翻页
+- 页数硬上限 10（即 200 条）保险
+
+### 配置新增项
+
+`SOCIAL_CONFIG["social_provider"]` 新增 `include_replies: bool`（默认 False；要拿 reply 推文设 True）。仅 `TwitterApiIoClient` 识别。
+
+### 依赖增删
+
+- 删：`langchain-community`、`dashscope`
+- 加：`langchain-openai`
+- 保留：`langchain-core`（`HumanMessage` 等公共类型）

@@ -1393,3 +1393,67 @@ Ctrl+C 退出。
 - Pub/Sub → Streams 迁移（出现"丢一条贵"场景时）
 - 配置分文件（`config/market.py` 拆出去）
 - `MessageType` 老命名加业务前缀
+
+---
+
+## 实施后变更（2026-06-01）
+
+实施落地时跟原计划有若干差异，详见同目录 [2026-05-31-x-ai-briefing-design.md "实施后变更" 一节](2026-05-31-x-ai-briefing-design.md#实施后变更2026-06-01)。要点摘录：
+
+### X 数据源：socialdata.tools → twitterapi.io
+
+socialdata.tools 需 $5 起充值且无 free tier，临时换 twitterapi.io（free tier 1 req/5sec），保留 `SocialDataClient` 作 fallback。`SOCIAL_CONFIG["social_provider"]` 通过 `name` 字段选实现。
+
+### twitterapi.io endpoint 对比
+
+| 维度 | `/twitter/user/last_tweets`（当前用的） | `/twitter/user/tweet_timeline` |
+|---|---|---|
+| 入参 `userId` | ✓ | ✓（**只接受 userId**） |
+| 入参 `userName` | ✓ | ✗（需先 `/twitter/user/info` 查 id） |
+| `includeReplies` | ✓ | ✓ |
+| **`includeParentTweet`** | ✗ | **✓** |
+| 排序 | 严格 `created_at` desc | 与 Twitter app 一致 |
+| 每页 | 20 条（`count` 参数无效） | 20 条 |
+| 翻页 | `cursor`（`""` 起 / `next_cursor` / `has_next_page`） | 同 |
+
+选 `last_tweets`：当前白名单 `elonmusk` 大量 quote_tweet 不是 reply，`quoted_tweet` 字段已能拿全上下文，不需要 `includeParentTweet`，也省一次 `/user/info` 调用 + userId 缓存层。如果未来白名单偏向 reply 大户（sama / karpathy），再换 `tweet_timeline`。
+
+### 翻页与限流
+
+`fetch_user_timeline` 不再单页拿满 `fetch_limit_per_user`，改 cursor 翻页 + `time.sleep(5.5)` 避开 free tier 限速；遇到 `id ≤ since_id` 早停。页数硬上限 10 防异常无限翻。
+
+### 推文上下文拼接
+
+新增 `_compose_text_with_context(t)`：
+- 转推用 `retweeted_tweet.text` 完整原文替换被截断的顶层 `text`
+- 引用在原 `text` 后拼 `\n\n> @作者: 完整内容`
+
+否则 LLM 看到 "True/Yes/Bullseye" 完全无信息量。
+
+### LLM：Anthropic Claude → 阿里百炼 qwen3.6-plus
+
+| 维度 | 原计划 | 当前 |
+|---|---|---|
+| Provider | Anthropic Claude | 阿里百炼 DashScope |
+| Wrapper | 自写 `AnthropicLLMClient` | `langchain_openai.ChatOpenAI` + `base_url=https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| Model | `claude-haiku-4-5` | `qwen3.6-plus`（thinking 模型） |
+| Env | `ANTHROPIC_API_KEY` | `DASHSCOPE_API_KEY` |
+| `max_tokens` / `timeout_sec` | 默认 / 60 | **8192 / 180**（thinking 要预留 token + 时间） |
+
+原计划的 `langchain_community.ChatTongyi` 已 deprecated 且不识别 `qwen3.6-plus`；切到 OpenAI 兼容路径后正常。
+
+### 依赖
+
+删 `langchain-community` / `dashscope`，加 `langchain-openai`。
+
+### 验证
+
+```bash
+# 端到端：50 条 elonmusk 推文 → qwen3.6-plus 简报
+.venv/bin/python3 app.py --producers x_briefing --once
+
+# 看数据
+.venv/bin/python scripts/show_posts.py
+```
+
+50 条 / 翻 3 页 / 22s 完成抓取；LLM 9389 input + 3567 output tokens / 66s 完成简报。
