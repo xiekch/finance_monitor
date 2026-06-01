@@ -58,6 +58,10 @@ class TongyiLLMClient:
     async def summarize(self, payload: BriefingInput) -> BriefingOutput:
         from langchain_core.messages import HumanMessage
         prompt = self._render_prompt(payload)
+        logging.info(
+            f"[TongyiLLMClient] invoking model={self.model} "
+            f"posts={len(payload.posts)} prompt_chars={len(prompt)}"
+        )
         last_err: Optional[Exception] = None
         for attempt in range(2):
             t0 = time.time()
@@ -65,12 +69,14 @@ class TongyiLLMClient:
                 resp = self._llm.invoke([HumanMessage(content=prompt)])
                 ms = int((time.time() - t0) * 1000)
                 in_tok, out_tok = self._extract_token_usage(resp)
+                markdown = (resp.content or "").strip()
                 logging.info(
                     f"[TongyiLLMClient] model={self.model} "
-                    f"in={in_tok} out={out_tok} elapsed={ms}ms"
+                    f"in={in_tok} out={out_tok} elapsed={ms}ms output_chars={len(markdown)}"
                 )
+                logging.info(f"[TongyiLLMClient] output markdown:\n{markdown}")
                 return BriefingOutput(
-                    markdown=(resp.content or "").strip(),
+                    markdown=markdown,
                     sections=[],   # MVP 不强制结构化解析
                     model=self.model,
                     input_tokens=in_tok,

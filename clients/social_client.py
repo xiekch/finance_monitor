@@ -49,6 +49,11 @@ class SocialDataClient:
                 logging.info(
                     f"[SocialDataClient] fetch @{handle} since={since_id} → {len(posts)} posts in {ms}ms"
                 )
+                for p in posts:
+                    snippet = p.text.replace("\n", " ")[:120]
+                    suffix = "..." if len(p.text) > 120 else ""
+                    rt = " [RT]" if p.is_retweet else ""
+                    logging.info(f"  └ [{p.post_id}]{rt} {snippet}{suffix}")
                 return posts
             except Exception as e:
                 last_err = e
@@ -147,7 +152,13 @@ class TwitterApiIoClient:
             if not has_next or hit_boundary:
                 break
 
-        return out[:limit]
+        result = out[:limit]
+        for p in result:
+            snippet = p.text.replace("\n", " ")[:120]
+            suffix = "..." if len(p.text) > 120 else ""
+            rt = " [RT]" if p.is_retweet else ""
+            logging.info(f"  └ [{p.post_id}]{rt} {snippet}{suffix}")
+        return result
 
     def _get_with_retry(self, url: str, params: dict, label: str) -> dict:
         last_err: Optional[Exception] = None

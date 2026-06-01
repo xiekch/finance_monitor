@@ -58,10 +58,14 @@ class NotificationConsumer(BaseConsumer):
 
     def _handle_briefing(self, message: BaseMessage):
         markdown = message.payload.get("markdown", "")
+        degraded = message.payload.get("degraded")
+        logging.info(
+            f"[{self.consumer_name}] 即将推送 AI 简报 degraded={degraded} "
+            f"chars={len(markdown)}:\n{markdown}"
+        )
         ok = self.wechat_notifier.send_markdown(
             markdown, max_chars=SOCIAL_CONFIG["push_max_chars"]
         )
-        degraded = message.payload.get("degraded")
         if ok:
             logging.info(f"[{self.consumer_name}] AI 简报推送成功 degraded={degraded}")
         else:

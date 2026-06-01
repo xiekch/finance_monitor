@@ -57,12 +57,17 @@ class XBriefingProducer(BaseProducer):
             logging.info("[XBriefingProducer] no new posts, skip publishing")
             return []
 
+        by_author = dict(Counter(p.author for p in all_new))
+        logging.info(
+            f"[XBriefingProducer] batch ready: {len(all_new)} posts, by_author={by_author}"
+        )
+
         payload = {
             "posts": [asdict(p) for p in all_new],
             "window_hours": SOCIAL_CONFIG["window_hours"],
             "stats": {
                 "total": len(all_new),
-                "by_author": dict(Counter(p.author for p in all_new)),
+                "by_author": by_author,
             },
         }
         return [SocialPostBatchMessage(payload=payload, source=self.producer_name)]
