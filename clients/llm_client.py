@@ -29,19 +29,25 @@ class LLMClient(Protocol):
 
 
 class TongyiLLMClient:
-    """默认实现：阿里百炼 (DashScope) via langchain_community ChatTongyi。"""
+    """默认实现：通过 OpenAI 兼容协议调阿里百炼 (DashScope)。
+
+    走 langchain_openai.ChatOpenAI + base_url 指向 DashScope 的
+    /compatible-mode/v1 端点；比 langchain_community.ChatTongyi
+    省去 deprecated warning、key 字段别名不透传等坑，且能直接拿
+    到标准 usage_metadata。
+    """
 
     def __init__(self, api_key: str, model: str, max_tokens: int,
-                 prompt_template: str, temperature: float = 0.3,
-                 timeout_sec: int = 60):
-        from langchain_community.chat_models.tongyi import ChatTongyi
-        from pydantic import SecretStr
-        self._llm = ChatTongyi(
+                 prompt_template: str, base_url: str,
+                 temperature: float = 0.3, timeout_sec: int = 60):
+        from langchain_openai import ChatOpenAI
+        self._llm = ChatOpenAI(
+            api_key=api_key,
+            base_url=base_url,
             model=model,
-            api_key=SecretStr(api_key) if api_key else None,
             temperature=temperature,
             max_tokens=max_tokens,
-            verbose=False,
+            timeout=timeout_sec,
         )
         self.model = model
         self.max_tokens = max_tokens
@@ -111,6 +117,7 @@ def build_default_llm_client() -> LLMClient:
     llm_cfg = SOCIAL_CONFIG["llm_provider"]
     return TongyiLLMClient(
         api_key=os.getenv(llm_cfg["api_key_env"], ""),
+        base_url=llm_cfg["base_url"],
         model=llm_cfg["model"],
         max_tokens=llm_cfg["max_tokens"],
         temperature=llm_cfg.get("temperature", 0.3),

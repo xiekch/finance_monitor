@@ -13,6 +13,7 @@ SOCIAL_CONFIG = {
 
     # 关注的 X 账号白名单（不带 @）
     "whitelist": [
+        "elonmusk",
         # "karpathy",
         # "sama",
         # "AnthropicAI",
@@ -20,21 +21,25 @@ SOCIAL_CONFIG = {
     # 单账号单次拉取上限
     "fetch_limit_per_user": 50,
 
-    # X 数据源（默认 socialdata.tools，按最终选定服务再调整 base_url 与 client 实现）
+    # X 数据源。clients/social_client.py 按 name 派发到对应 client 类。
+    # - twitterapi_io: free tier 限速 1 req / 5 sec
+    # - socialdata: 按次付费，~$0.0002/req
     "social_provider": {
-        "name": "socialdata",
-        "api_key_env": "SOCIALDATA_API_KEY",
-        "base_url": "https://api.socialdata.tools",
+        "name": "twitterapi_io",
+        "api_key_env": "TWITTERAPI_IO_KEY",
+        "base_url": "https://api.twitterapi.io",
         "timeout_sec": 10,
     },
 
     # LLM
+    # 走 OpenAI 兼容协议调 DashScope；换 provider 时改 base_url + api_key_env + model
     "llm_provider": {
         "name": "tongyi",
         "api_key_env": "DASHSCOPE_API_KEY",
-        "model": "qwen-plus",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "model": "qwen3.6-plus",
         "temperature": 0.3,
-        "max_tokens": 2048,
+        "max_tokens": 8192,
         "timeout_sec": 60,
     },
 

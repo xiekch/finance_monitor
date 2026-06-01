@@ -132,7 +132,8 @@ python app.py --producers x_briefing --once
 
 ```env
 DASHSCOPE_API_KEY=...            # 阿里百炼 / 通义千问 API key
-SOCIALDATA_API_KEY=...           # 第三方 X 聚合服务的 key
+TWITTERAPI_IO_KEY=...            # twitterapi.io 的 key（默认 X 数据源；
+                                 # 如改用 socialdata.tools 则配 SOCIALDATA_API_KEY）
 ```
 
 ### 配置位置 `config/social.py`
@@ -144,8 +145,8 @@ SOCIALDATA_API_KEY=...           # 第三方 X 聚合服务的 key
 - `cron_hours`：简报时段，例 `"8,20"` 表示每天 8 点和 20 点各一次
 - `window_hours`：每次简报覆盖的回看窗口（仅作为 LLM prompt 上下文，不影响 since_id 增量）
 - `prompt_template` / `user_prompt_extra`：LLM prompt，可调
-- `social_provider`：第三方 X 聚合服务，默认占位 `socialdata.tools`，按最终选定服务调整
-- `llm_provider`：LLM，默认 `tongyi`（阿里百炼 ChatTongyi via langchain），`model` 默认 `qwen-plus`
+- `social_provider`：第三方 X 聚合服务，默认 `twitterapi_io`；可切 `socialdata`，client 在 [clients/social_client.py](clients/social_client.py) 按 `name` 派发
+- `llm_provider`：LLM，默认 `tongyi`（DashScope via OpenAI 兼容协议 + `langchain_openai.ChatOpenAI`），`model` 默认 `qwen3.6-plus`，`max_tokens` 8192（qwen3 thinking 模型需要预留 thinking token 配额）
 - `push_max_chars`：推送给企微的字符上限（4096 字节内安全冗余）
 
 ### 数据落地（共用 `market_data.db`）
