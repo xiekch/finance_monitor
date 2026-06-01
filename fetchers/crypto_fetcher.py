@@ -108,7 +108,11 @@ class CryptoFetcher(BaseFetcher):
         connector = aiohttp.TCPConnector(ssl=ssl_context)
         try:
             proxy = PROXY_URL if PROXY else None
-            async with aiohttp.ClientSession(connector=connector, proxy=proxy) as session:
+            # trust_env=False 让 aiohttp 不读 HTTP(S)_PROXY 环境变量；
+            # 否则即使 PROXY=False，残留 env 也会让请求绕去本地代理失败。
+            async with aiohttp.ClientSession(
+                connector=connector, proxy=proxy, trust_env=False
+            ) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()

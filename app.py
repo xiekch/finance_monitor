@@ -74,6 +74,8 @@ class ProducerConsumerApp:
         self.is_running = False
 
         # 配置日志
+        # force=True 强制清掉已存在的 handler（某些第三方库 import 时会
+        # 抢先给 root 装 stderr handler + 提到 WARNING，会让 basicConfig 静默失效）
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -81,6 +83,7 @@ class ProducerConsumerApp:
                 logging.FileHandler("app.log", encoding="utf-8"),
                 logging.StreamHandler(sys.stdout),
             ],
+            force=True,
         )
 
         # 后台启动 Redis（仅 MQ_BACKEND=redis 时；默认走进程内 backend，无需 Redis）

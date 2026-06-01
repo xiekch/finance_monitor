@@ -4,10 +4,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 PROXY = False
-PROXY_URL = "http://127.0.0.1:7897" 
+PROXY_URL = "http://127.0.0.1:7897"
 if PROXY:
-    os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7897'
-    os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7897'
+    os.environ['HTTP_PROXY'] = PROXY_URL
+    os.environ['HTTPS_PROXY'] = PROXY_URL
+else:
+    # 清掉 shell / .env / 上次跑 PROXY=True 残留的代理 env，否则 aiohttp、
+    # yfinance(curl_cffi)、requests 都会偷偷走 env 里的代理 → 连不上 7897
+    for _k in ('HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy'):
+        os.environ.pop(_k, None)
 
 # API配置
 API_CONFIG = {
