@@ -1,13 +1,5 @@
-from typing import Dict
-
 from .base_consumer import BaseConsumer
-from models.messages import (
-    BaseMessage,
-    VolatilityAlertMessage,
-    SystemEventMessage,
-    AIBriefingMessage,
-    MessageType,
-)
+from models.messages import BaseMessage, MessageType
 from notifiers.wechat_notifier import WeChatNotifier
 from config.social import SOCIAL_CONFIG
 import logging
@@ -24,14 +16,14 @@ class NotificationConsumer(BaseConsumer):
         ])
         self.wechat_notifier = WeChatNotifier()
 
-    def process_message(self, message: Dict):
-        message_type = MessageType(message["message_type"])
-        if message_type == MessageType.VOLATILITY_ALERT:
-            self._handle_volatility_alert(VolatilityAlertMessage.from_dict(message))
-        elif message_type == MessageType.SYSTEM_EVENT:
-            self._handle_system_event(SystemEventMessage.from_dict(message))
-        elif message_type == MessageType.AI_BRIEFING:
-            self._handle_briefing(AIBriefingMessage.from_dict(message))
+    def process_message(self, message: BaseMessage):
+        mt = message.message_type
+        if mt == MessageType.VOLATILITY_ALERT:
+            self._handle_volatility_alert(message)
+        elif mt == MessageType.SYSTEM_EVENT:
+            self._handle_system_event(message)
+        elif mt == MessageType.AI_BRIEFING:
+            self._handle_briefing(message)
 
     def _handle_volatility_alert(self, message: BaseMessage):
         alert_data = message.payload

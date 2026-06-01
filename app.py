@@ -206,7 +206,7 @@ class ProducerConsumerApp:
             },
             source="ProducerConsumerApp",
         )
-        mq.publish(MessageType.SYSTEM_EVENT.value, startup_message.to_dict())
+        mq.publish(MessageType.SYSTEM_EVENT.value, startup_message)
 
         print("系统启动完成，所有生产者和消费者已开始运行")
         print("按 Ctrl+C 停止系统")
@@ -242,7 +242,7 @@ class ProducerConsumerApp:
                 }
             }
         )
-        mq.publish(MessageType.SYSTEM_EVENT.value, shutdown_message.to_dict())
+        mq.publish(MessageType.SYSTEM_EVENT.value, shutdown_message)
 
         if _using_redis_backend():
             os.system("redis-cli shutdown")

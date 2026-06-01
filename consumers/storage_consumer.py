@@ -1,14 +1,11 @@
 import json
 import logging
 from datetime import datetime
-from typing import Dict
 
 from consumers.base_consumer import BaseConsumer
 from models.messages import (
+    BaseMessage,
     MessageType,
-    PriceDataMessage,
-    SocialPostBatchMessage,
-    AIBriefingMessage,
 )
 from models.market import PriceData
 from storage.market_db import MarketDataDB
@@ -29,8 +26,8 @@ class StorageConsumer(BaseConsumer):
         self.db = MarketDataDB()
         self.social_store = SocialPostStore()
 
-    def process_message(self, message: Dict):
-        mt = MessageType(message["message_type"])
+    def process_message(self, message: BaseMessage):
+        mt = message.message_type
         if mt in (MessageType.PRICE_DATA, MessageType.HISTORICAL_PRICE_DATA):
             self._handle_price(message)
         elif mt == MessageType.SOCIAL_POST_BATCH:
@@ -38,26 +35,23 @@ class StorageConsumer(BaseConsumer):
         elif mt == MessageType.AI_BRIEFING:
             self._handle_briefing(message)
 
-    def _handle_price(self, message: Dict):
-        price_message = PriceDataMessage.from_dict(message)
-        price_data = PriceData(**price_message.payload)
+    def _handle_price(self, message: BaseMessage):
+        price_data = PriceData(**message.payload)
         if self.db.save_price_data(price_data):
             logging.info(f"[{self.consumer_name}] 数据已保存: {price_data.symbol} {price_data}")
         else:
             logging.info(f"[{self.consumer_name}] 数据已存在，无需保存: {price_data.symbol} {price_data}")
 
-    def _handle_social_batch(self, message: Dict):
-        msg = SocialPostBatchMessage.from_dict(message)
-        posts = [SocialPost.from_dict(p) for p in msg.payload.get("posts", [])]
+    def _handle_social_batch(self, message: BaseMessage):
+        posts = [SocialPost.from_dict(p) for p in message.payload.get("posts", [])]
         n = self.social_store.save_posts(posts)
         logging.info(
             f"[{self.consumer_name}] social_posts batch saved: "
             f"new={n} total_in_batch={len(posts)}"
         )
 
-    def _handle_briefing(self, message: Dict):
-        msg = AIBriefingMessage.from_dict(message)
-        p = msg.payload
+    def _handle_briefing(self, message: BaseMessage):
+        p = message.payload
         briefing = Briefing(
             created_at=p.get("created_at") or datetime.now().isoformat(),
             window_hours=p.get("window_hours", 0),

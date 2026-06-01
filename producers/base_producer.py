@@ -48,7 +48,7 @@ class BaseProducer(ABC):
         if channel is None:
             channel = message.message_type.value
 
-        mq.publish(channel, message.to_dict())
+        mq.publish(channel, message)
         logging.info(f"[{self.producer_name}] 发布消息到 {channel}: {message.message_id}")
 
     def _setup_scheduler_listeners(self):

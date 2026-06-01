@@ -1,13 +1,13 @@
 import asyncio
 import logging
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Optional
 
 from consumers.base_consumer import BaseConsumer
 from infra.message_queue import mq
 from models.messages import (
+    BaseMessage,
     MessageType,
-    SocialPostBatchMessage,
     AIBriefingMessage,
 )
 from clients.llm_client import (
@@ -24,16 +24,15 @@ class AIBriefingConsumer(BaseConsumer):
         super().__init__("AIBriefingConsumer", [MessageType.SOCIAL_POST_BATCH])
         self.llm = llm or build_default_llm_client()
 
-    def process_message(self, message: Dict):
-        batch = SocialPostBatchMessage.from_dict(message)
-        posts = [SocialPost.from_dict(p) for p in batch.payload.get("posts", [])]
+    def process_message(self, message: BaseMessage):
+        posts = [SocialPost.from_dict(p) for p in message.payload.get("posts", [])]
         if not posts:
             logging.warning(f"[{self.consumer_name}] empty batch received, skip")
             return
 
         bi = BriefingInput(
             posts=posts,
-            window_hours=batch.payload.get("window_hours", SOCIAL_CONFIG["window_hours"]),
+            window_hours=message.payload.get("window_hours", SOCIAL_CONFIG["window_hours"]),
             user_prompt_extra=SOCIAL_CONFIG.get("user_prompt_extra"),
             max_chars=SOCIAL_CONFIG["push_max_chars"],
         )
@@ -57,7 +56,7 @@ class AIBriefingConsumer(BaseConsumer):
             }
         except Exception as e:
             logging.error(f"[{self.consumer_name}] LLM summarize failed: {e}", exc_info=True)
-            by_author = batch.payload.get("stats", {}).get("by_author", {})
+            by_author = message.payload.get("stats", {}).get("by_author", {})
             md = (
                 f"📰 AI 简报生成失败\n\n"
                 f"收到 {len(posts)} 条推文（{by_author}）\n"
@@ -77,7 +76,7 @@ class AIBriefingConsumer(BaseConsumer):
             }
 
         out = AIBriefingMessage(payload=payload, source=self.consumer_name)
-        mq.publish(MessageType.AI_BRIEFING.value, out.to_dict())
+        mq.publish(MessageType.AI_BRIEFING.value, out)
         logging.info(
             f"[{self.consumer_name}] published AI_BRIEFING degraded={payload['degraded']} "
             f"posts={len(posts)}"

@@ -58,10 +58,27 @@ class BaseMessage:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]):
-        """从字典创建"""
+        """从字典创建。不修改入参（memory backend 会跨消费者共享同一 dict）。"""
+        data = dict(data)
         data["message_type"] = MessageType(data["message_type"])
         data["timestamp"] = datetime.fromisoformat(data["timestamp"])
         return cls(**data)
+
+    @staticmethod
+    def deserialize(data: Dict[str, Any]) -> "BaseMessage":
+        """根据 data['message_type'] 查 MESSAGE_CLASSES 还原成对应子类。
+
+        Redis backend 收到 json 反序列化出来的 dict 时调用；新增 MessageType
+        时记得在文件底部 MESSAGE_CLASSES 注册。
+        """
+        mt = MessageType(data["message_type"])
+        try:
+            cls = MESSAGE_CLASSES[mt]
+        except KeyError as e:
+            raise ValueError(
+                f"未注册的 MessageType: {mt}; 在 MESSAGE_CLASSES 里登记一下"
+            ) from e
+        return cls.from_dict(data)
 
 
 @dataclass
@@ -193,3 +210,18 @@ class AIBriefingMessage(BaseMessage):
             payload=payload,
             message_id=message_id,
         )
+
+
+# MessageType → 对应 BaseMessage 子类的注册表，给 Redis backend
+# 反序列化时按 type 路由用。新增 MessageType 时记得在这里加一条。
+# - PRICE_DATA 与 HISTORICAL_PRICE_DATA 共用 PriceDataMessage
+# - TASK_REQUEST / TASK_RESULT 当前代码无 publish 路径，未注册；
+#   要启用时需保证子类 __init__ 能接受 from_dict 反序列出的字段。
+MESSAGE_CLASSES: Dict[MessageType, type] = {
+    MessageType.PRICE_DATA: PriceDataMessage,
+    MessageType.HISTORICAL_PRICE_DATA: PriceDataMessage,
+    MessageType.VOLATILITY_ALERT: VolatilityAlertMessage,
+    MessageType.SYSTEM_EVENT: SystemEventMessage,
+    MessageType.SOCIAL_POST_BATCH: SocialPostBatchMessage,
+    MessageType.AI_BRIEFING: AIBriefingMessage,
+}

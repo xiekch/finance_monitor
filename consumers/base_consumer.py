@@ -17,20 +17,19 @@ class BaseConsumer(ABC):
         self.message_handlers: Dict[str, Callable] = {}
     
     @abstractmethod
-    def process_message(self, message: Dict):
-        """处理消息（由子类实现）"""
+    def process_message(self, message: BaseMessage):
+        """处理消息（由子类实现）。message 已由 mq backend 反序列化为 BaseMessage 子类。"""
         pass
-    
+
     def _subscribe_channel(self, message_type: MessageType):
         """在独立线程中订阅一个频道"""
         channel = message_type.value
-        def handler(data):
+        def handler(msg: BaseMessage):
             try:
-                logging.debug(f"原始数据 {data}")
-                self.process_message(data)
+                self.process_message(msg)
             except Exception as e:
                 logging.error(f"[{self.consumer_name}] 处理 {message_type.value} 消息失败: {e}", exc_info=True)
-        
+
         logging.info(f"[{self.consumer_name}] 开始订阅频道: {channel}")
         mq.subscribe(channel, handler)
     
