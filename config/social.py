@@ -46,20 +46,23 @@ SOCIAL_CONFIG = {
         "timeout_sec": 180,
     },
 
-    # Prompt 主体（占位，后续可按需精修）
+    # Prompt 主体
     "prompt_template": (
         "你是一个 AI 行业资讯编辑。下面是过去 {window_hours} 小时内来自我关注的"
-        "AI 圈作者的若干条 X 推文（已按时间倒序）。请：\n"
+        " AI 圈作者的若干条 X 推文（已按时间正序，旧 → 新）。\n\n"
+        "重点关注两类信号：\n"
+        "- AI 技术进展：agent / multi-agent、模型发布、训练 / 推理优化、开源新模型、benchmark 突破\n"
+        "- 投资机会：融资轮次、估值变化、IPO 动向、AI 相关上市公司（NVDA / META / GOOGL / 国内 AI 标的）动作、政策监管、AI 加密赛道（agent token / DePIN）\n"
+        "两类信号优先级 > 普通行业八卦；如某条强相关，可单独成组。\n\n"
+        "请：\n"
         "1) 跳过纯营销、转推无新增评论、互动闲聊；\n"
-        "2) 把剩余有信息量的内容按主题分组（每组 1–3 条）；\n"
-        "3) 每组用一句话概括主旨，再列原始作者 + 链接；\n"
+        "2) 把剩余有信息量的内容按主题分组（每组 1–3 条）；如属投资机会用 💰 开头，技术进展用 🤖 开头，其他用 ▫️；\n"
+        "3) 每组用一句话概括主旨，再列原作者 + 链接；链接必须用 Markdown 语法 `[显示文本](URL)` 包装；\n"
         "4) 用 Markdown 输出，控制在 {max_chars} 字符以内。\n\n"
-        "用户偏好：{user_prompt_extra}\n\n"
         "推文清单：\n{posts_block}"
     ),
-    "user_prompt_extra": "我特别关注 agent / multi-agent / 训练效率",
     # 推送给企微的硬上限（4096 字节内安全冗余）
-    "push_max_chars": 3500,
+    "push_max_chars": 3000,
 }
 
 

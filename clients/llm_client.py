@@ -11,7 +11,6 @@ from models.social import SocialPost
 class BriefingInput:
     posts: List[SocialPost]
     window_hours: int
-    user_prompt_extra: Optional[str]
     max_chars: int
 
 
@@ -105,13 +104,16 @@ class TongyiLLMClient:
                int(tu.get("output_tokens", 0) or tu.get("completion_tokens", 0))
 
     def _render_prompt(self, payload: BriefingInput) -> str:
+        # 全局按时间正序（旧→新）：跨账号同主题事件相邻出现，便于 LLM 主题聚合；
+        # 最新事件落在 prompt 尾部，对齐 LLM 的 recency bias。
+        # created_at 是 ISO8601 字符串，词典序与时间序一致；空串排最前不影响。
+        ordered = sorted(payload.posts, key=lambda p: p.created_at or "")
         posts_block = "\n\n".join(
             f"[{p.author}] {p.created_at}\n{p.text}\n{p.url}"
-            for p in payload.posts
+            for p in ordered
         )
         return self.prompt_template.format(
             window_hours=payload.window_hours,
-            user_prompt_extra=payload.user_prompt_extra or "",
             max_chars=payload.max_chars,
             posts_block=posts_block,
         )

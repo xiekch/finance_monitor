@@ -33,7 +33,6 @@ class AIBriefingConsumer(BaseConsumer):
         bi = BriefingInput(
             posts=posts,
             window_hours=message.payload.get("window_hours", SOCIAL_CONFIG["window_hours"]),
-            user_prompt_extra=SOCIAL_CONFIG.get("user_prompt_extra"),
             max_chars=SOCIAL_CONFIG["push_max_chars"],
         )
 
