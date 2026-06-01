@@ -8,7 +8,7 @@ from websocket import WebSocket
 import ssl
 import threading
 import logging
-from config.settings import PROXY_URL
+from config.settings import PROXY, PROXY_URL
 from .base_fetcher import BaseFetcher
 from models.market import PriceData
 from storage.market_db import MarketDataDB
@@ -107,7 +107,8 @@ class CryptoFetcher(BaseFetcher):
         # 3. 传入SSL上下文和代理
         connector = aiohttp.TCPConnector(ssl=ssl_context)
         try:
-            async with aiohttp.ClientSession(connector=connector, proxy=PROXY_URL) as session:
+            proxy = PROXY_URL if PROXY else None
+            async with aiohttp.ClientSession(connector=connector, proxy=proxy) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()

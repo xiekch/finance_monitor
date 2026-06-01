@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-PROXY = True
+PROXY = False
 PROXY_URL = "http://127.0.0.1:7897" 
 if PROXY:
     os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7897'
