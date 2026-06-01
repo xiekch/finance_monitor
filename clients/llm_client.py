@@ -38,8 +38,17 @@ class TongyiLLMClient:
 
     def __init__(self, api_key: str, model: str, max_tokens: int,
                  prompt_template: str, base_url: str,
-                 temperature: float = 0.3, timeout_sec: int = 60):
+                 temperature: float = 0.3, timeout_sec: int = 60,
+                 enable_thinking: Optional[bool] = None):
+        """
+        Args:
+            enable_thinking: DashScope 扩展字段，控制 qwen3 系列是否走 thinking 模式。
+                - None：不传该字段，沿用模型默认（qwen3 默认 True）
+                - True/False：显式开启/关闭
+                deepseek 等不支持该字段的模型会忽略它。
+        """
         from langchain_openai import ChatOpenAI
+        extra_body = {"enable_thinking": enable_thinking} if enable_thinking is not None else None
         self._llm = ChatOpenAI(
             api_key=api_key,
             base_url=base_url,
@@ -47,12 +56,14 @@ class TongyiLLMClient:
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=timeout_sec,
+            extra_body=extra_body,
         )
         self.model = model
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.timeout_sec = timeout_sec
         self.prompt_template = prompt_template
+        self.enable_thinking = enable_thinking
 
     async def summarize(self, payload: BriefingInput) -> BriefingOutput:
         from langchain_core.messages import HumanMessage
@@ -131,4 +142,5 @@ def build_default_llm_client() -> LLMClient:
         temperature=llm_cfg.get("temperature", 0.3),
         prompt_template=SOCIAL_CONFIG["prompt_template"],
         timeout_sec=llm_cfg["timeout_sec"],
+        enable_thinking=llm_cfg.get("enable_thinking"),
     )

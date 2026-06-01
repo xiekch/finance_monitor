@@ -39,26 +39,36 @@ SOCIAL_CONFIG = {
         "name": "tongyi",
         "api_key_env": "DASHSCOPE_API_KEY",
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "model": "qwen3.6-plus",
+        "model": "deepseek-v4-flash",
         "temperature": 0.3,
-        "max_tokens": 8192,
-        # qwen3.6-plus 是 thinking 模型，处理 50 条推文 + 大 max_tokens 经常 60s+；给 180s 兜底
+        # thinking 模型 reasoning_tokens 占大头（qwen3.5-flash 实测 7700+），
+        # 给 16384 兜底，否则会截在 answer 半路
+        "max_tokens": 16384,
+        # deepseek-v4-flash 比 qwen 快，但仍给 180s 兜底以防 prompt 大时排队
         "timeout_sec": 180,
+        # DashScope qwen3 系列 thinking 默认开启，占 80%+ output tokens。
+        # 关掉省 token 和时间，但可能损失主题聚合质量（需评测）。
+        # - None: 不传该字段（沿用模型默认）
+        # - False: 显式关闭（仅 qwen3 系列生效；deepseek 等会忽略）
+        # - True: 显式开启
+        "enable_thinking": False,
     },
 
     # Prompt 主体
     "prompt_template": (
-        "你是一个 AI 行业资讯编辑。下面是过去 {window_hours} 小时内来自我关注的"
-        " AI 圈作者的若干条 X 推文（已按时间正序，旧 → 新）。\n\n"
-        "重点关注两类信号：\n"
-        "- AI 技术进展：agent / multi-agent、模型发布、训练 / 推理优化、开源新模型、benchmark 突破\n"
-        "- 投资机会：融资轮次、估值变化、IPO 动向、AI 相关上市公司（NVDA / META / GOOGL / 国内 AI 标的）动作、政策监管、AI 加密赛道（agent token / DePIN）\n"
-        "两类信号优先级 > 普通行业八卦；如某条强相关，可单独成组。\n\n"
-        "请：\n"
-        "1) 跳过纯营销、转推无新增评论、互动闲聊；\n"
-        "2) 把剩余有信息量的内容按主题分组（每组 1–3 条）；如属投资机会用 💰 开头，技术进展用 🤖 开头，其他用 ▫️；\n"
-        "3) 每组用一句话概括主旨，再列原作者 + 链接；链接必须用 Markdown 语法 `[显示文本](URL)` 包装；\n"
-        "4) 用 Markdown 输出，控制在 {max_chars} 字符以内。\n\n"
+        "你是 AI 行业资讯编辑。下面是过去 {window_hours} 小时来自我关注账号的 X 推文（按时间正序）。"
+        "请筛选有信息量的内容（跳过纯营销、转推无评论、互动闲聊），按主题分组生成简报。\n\n"
+        "关注信号与分组标签：\n"
+        "- 🤖 AI 技术：agent / multi-agent、模型发布、训练 / 推理、开源、benchmark\n"
+        "- 💰 投资机会：融资、估值、IPO、AI 上市公司动向（NVDA / META / GOOGL / 国内标的）、政策、AI 加密赛道\n"
+        "- 💡 其他有价值内容\n\n"
+        "格式（请严格遵守每一条）：\n"
+        "- 标题：每组用 `### emoji 主题名` 三级标题；emoji 严格三选一（🤖 / 💰 / 💡），禁止使用其他任何 emoji\n"
+        "- 概括：标题下方直接写一行普通段落（不要 `-` bullet、不要加粗），一句话概括该组主旨\n"
+        "- 推文条目：用 `- @作者: [一句话提要](URL)` 列具体推文\n"
+        "  - `@作者`：填**推文的真实原作者**。若 text 以 `RT @某人:` 开头，原作者是 `@某人`（不是上方 `[...]` 标记的 timeline 拥有者）\n"
+        "  - 链接：写成 markdown 格式 `[要点摘要](URL)`；`[]` 里必须是该推文要点（不要写 \"原文\"、\"链接\" 这类通用词），URL 必须包在 `()` 里，**禁止裸 URL**\n"
+        "- 整体：Markdown，不超过 {max_chars} 字符；直接从第一组标题开始，不要前言、客套、结尾总结\n\n"
         "推文清单：\n{posts_block}"
     ),
     # 推送给企微的硬上限（4096 字节内安全冗余）
