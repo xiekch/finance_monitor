@@ -49,11 +49,13 @@ class NotificationConsumer(BaseConsumer):
         event_type = message.payload["event_type"]
         event_data = message.payload["event_data"]
         if event_type == "system_start":
-            self.wechat_notifier.send_test_message()
+            self.wechat_notifier.send_text(
+                "🔔 市场波动监控系统测试\n系统启动成功，监控服务正常运行中..."
+            )
             logging.info(f"[{self.consumer_name}] 系统启动通知已发送")
         elif event_type == "system_shutdown":
             shutdown_message = f"🛑 市场监控系统已关闭\n时间: {event_data.get('timestamp', 'N/A')}"
-            self.wechat_notifier._send_wecom_message(shutdown_message)
+            self.wechat_notifier.send_text(shutdown_message)
             logging.info(f"[{self.consumer_name}] 系统关闭通知已发送")
 
     def _handle_briefing(self, message: BaseMessage):
@@ -63,9 +65,7 @@ class NotificationConsumer(BaseConsumer):
             f"[{self.consumer_name}] 即将推送 AI 简报 degraded={degraded} "
             f"chars={len(markdown)}:\n{markdown}"
         )
-        ok = self.wechat_notifier.send_markdown(
-            markdown, max_chars=SOCIAL_CONFIG["push_max_chars"]
-        )
+        ok = self.wechat_notifier.send_text(markdown)
         if ok:
             logging.info(f"[{self.consumer_name}] AI 简报推送成功 degraded={degraded}")
         else:
