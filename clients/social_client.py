@@ -107,6 +107,12 @@ class TwitterApiIoClient:
     async def fetch_user_timeline(
         self, handle: str, since_id: Optional[str], limit: int
     ) -> List[SocialPost]:
+        """翻页拉新推文。终止条件三选一（任一满足即停）：
+
+        1. 服务端 `has_next_page=False`（无更多）
+        2. 遇到 `id <= since_id` 的推文（hit_boundary，本批起完整覆盖）
+        3. 累计已达 limit（硬上限，防止单次拉爆；高频账号超 limit 部分本轮丢弃）
+        """
         url = f"{self.base_url}/twitter/user/last_tweets"
         out: List[SocialPost] = []
         cursor = ""
@@ -153,6 +159,14 @@ class TwitterApiIoClient:
                 break
 
         result = out[:limit]
+        # 已达 limit 但既没翻完也没遇到 since_id：窗口内新推 > limit，超出部分本轮丢弃
+        # 下次 producer 跑时 since_id 已跳到当前 max post_id，中间的旧推文之后捞不回
+        if cutoff is not None and not hit_boundary and len(out) >= limit:
+            logging.warning(
+                f"[TwitterApiIoClient] @{handle} 已达 limit={limit} 但未遇到 "
+                f"since_id={cutoff}，超出部分本轮漏掉；"
+                f"如频繁出现可调大 fetch_limit_per_user 或缩短 cron 间隔"
+            )
         for p in result:
             snippet = p.text.replace("\n", " ")[:120]
             suffix = "..." if len(p.text) > 120 else ""
