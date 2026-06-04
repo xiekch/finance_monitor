@@ -12,11 +12,24 @@ SOCIAL_CONFIG = {
     "window_hours": 12,
 
     # 关注的 X 账号白名单（不带 @）
+    # twitterapi.io free tier 限速 1 req / 5 sec，每账号最多翻 3 页（fetch_limit=50）
+    # → 平均 ~16s/账号；当前 10 个账号一轮约 2-3 分钟（cron 触发不阻塞主流程）
     "whitelist": [
+        # 大模型核心人物（CEO / 技术领袖，独家信号密度最高）
         "elonmusk",
-        # "karpathy",
-        # "sama",
-        # "AnthropicAI",
+        "sama",            # OpenAI CEO
+        "karpathy",        # 前 OpenAI / Tesla，深度技术
+        "DarioAmodei",     # Anthropic CEO
+        "demishassabis",   # Google DeepMind CEO
+        "gdb",             # Greg Brockman, OpenAI President
+
+        # 投资视角
+        "naval",           # Naval Ravikant
+
+        # 科技媒体 / 记者（独家爆料）
+        "amir",            # Amir Efrati, The Information AI 主笔
+        "EricNewcomer",    # Newcomer newsletter, AI / VC 独家
+        "caseynewton",     # Platformer, AI 政策与公司深度
     ],
     # 单账号单次拉取上限
     "fetch_limit_per_user": 50,
