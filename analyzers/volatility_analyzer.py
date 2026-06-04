@@ -33,7 +33,9 @@ class VolatilityAnalyzer:
             if abs(change_percent) >= threshold:
                 return VolatilityAlert(
                     symbol=current_data.symbol,
-                    name=current_data.symbol,  # 实际应该从配置获取名称
+                    name=self.threshold_manager.get_name(
+                        current_data.symbol, current_data.market
+                    ),
                     frequency='minute',
                     current_change=change_percent,
                     threshold=threshold,
@@ -115,7 +117,7 @@ class VolatilityAnalyzer:
             if abs(change_percent) >= threshold:
                 return VolatilityAlert(
                     symbol=symbol,
-                    name=symbol,
+                    name=self.threshold_manager.get_name(symbol, market),
                     frequency=frequency_label,
                     current_change=change_percent,
                     threshold=threshold,
