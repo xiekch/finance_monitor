@@ -37,15 +37,13 @@ class StockFetcher(BaseFetcher):
                     if latest_data:
                         results.append(latest_data)
             
-            # 并行获取实时数据
+            # 并行获取实时数据；写库职责由 StorageConsumer 统一承担，fetcher 不再直接写库
             if tasks:
                 realtime_results = await asyncio.gather(*tasks, return_exceptions=True)
                 for result in realtime_results:
                     if isinstance(result, PriceData):
                         results.append(result)
-                        # 保存到数据库
-                        self.db.save_price_data(result)
-        
+
         return results
     
     def _get_latest_from_db(self, symbol_info: dict) -> Optional[PriceData]:

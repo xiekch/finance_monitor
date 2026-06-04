@@ -36,14 +36,12 @@ class CryptoFetcher(BaseFetcher):
                 task = self._fetch_single_crypto(session, symbol_info)
                 tasks.append(task)
             
-            # 并行获取数据
+            # 并行获取数据；写库职责由 StorageConsumer 统一承担，fetcher 不再直接写库
             crypto_results = await asyncio.gather(*tasks, return_exceptions=True)
             for result in crypto_results:
                 if isinstance(result, PriceData):
                     results.append(result)
-                    # 保存到数据库
-                    self.db.save_price_data(result)
-        
+
         return results
     
     async def _fetch_single_crypto(self, session: aiohttp.ClientSession, 

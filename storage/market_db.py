@@ -57,47 +57,17 @@ class MarketDataDB:
         conn.commit()
         conn.close()
 
-    def exists_price_data(self, price_data: PriceData) -> bool:
-        """
-        查询是否已存在相同条件的价格数据
-        判断条件：symbol + market + frequency + timestamp 组合唯一
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            SELECT 1 FROM price_data
-            WHERE symbol = ? AND market = ? AND frequency = ? AND timestamp = ?
-            LIMIT 1
-        ''', (
-            price_data.symbol,
-            price_data.market,
-            price_data.frequency,
-            price_data.timestamp
-        ))
-
-        # 若查询到记录（fetchone()不为None），返回True，否则返回False
-        exists = cursor.fetchone() is not None
-        conn.close()
-        return exists
-
     def save_price_data(self, price_data: PriceData) -> bool:
         """
-        保存价格数据（先判断是否存在，不存在才插入）
-        返回值：True=保存成功，False=已存在无需保存
+        保存价格数据，使用 INSERT OR IGNORE 让 DB 唯一索引一次性完成判重，
+        避免 SELECT-then-INSERT 之间的竞态。
+        返回值：True=新写入，False=已存在 / 写入失败
         """
-        # 第一步：先查询是否已存在
-        if self.exists_price_data(price_data):
-            # 存在重复数据，无需保存
-            return False
-
-        # 第二步：不存在则执行插入
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-
             cursor.execute('''
-                INSERT INTO price_data
+                INSERT OR IGNORE INTO price_data
                 (symbol, market, timestamp, open, high, low, close, volume, frequency)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
@@ -105,13 +75,13 @@ class MarketDataDB:
                 price_data.open, price_data.high, price_data.low,
                 price_data.close, price_data.volume, price_data.frequency
             ))
-
+            inserted = cursor.rowcount > 0
             conn.commit()
             conn.close()
-            return True
-
+            return inserted
         except Exception as e:
-            print(f"保存价格数据失败：{e}")
+            import logging
+            logging.error(f"保存价格数据失败 {price_data.symbol}: {e}", exc_info=True)
             return False
 
     def get_latest_price(self, symbol: str, market: str, frequency: str = '1m') -> Optional[PriceData]:
