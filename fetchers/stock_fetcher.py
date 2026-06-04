@@ -1,5 +1,6 @@
 import aiohttp
 import asyncio
+import logging
 from typing import List, Optional
 from datetime import datetime, timedelta
 
@@ -65,7 +66,7 @@ class StockFetcher(BaseFetcher):
         elif market in ['US', 'NASDAQ', 'NYSE']:
             return await self._fetch_finage_data(session, symbol_info)
         else:
-            print(f"未知市场类型: {market} for symbol {symbol}")
+            logging.warning(f"[StockFetcher] 未知市场类型: {market} for symbol {symbol}")
             return None
     
     async def _fetch_itick_data(self, session: aiohttp.ClientSession, 
@@ -101,11 +102,11 @@ class StockFetcher(BaseFetcher):
                             frequency='1m'
                         )
                 else:
-                    print(f"iTick API错误: {response.status}")
+                    logging.error(f"[StockFetcher] iTick API错误: {response.status}")
                     return None
-                    
+
         except Exception as e:
-            print(f"iTick数据获取失败 {symbol_info['name']}: {e}")
+            logging.error(f"[StockFetcher] iTick 数据获取失败 {symbol_info['name']}: {e}")
             return None
     
     async def _fetch_finage_data(self, session: aiohttp.ClientSession, 
@@ -135,34 +136,84 @@ class StockFetcher(BaseFetcher):
                         frequency='1m'
                     )
                 else:
-                    print(f"Finage API错误: {response.status}")
+                    logging.error(f"[StockFetcher] Finage API错误: {response.status}")
                     return None
-                    
+
         except Exception as e:
-            print(f"Finage数据获取失败 {symbol_info['name']}: {e}")
+            logging.error(f"[StockFetcher] Finage 数据获取失败 {symbol_info['name']}: {e}")
             return None
     
-    async def fetch_historical_data(self, symbol: str, frequency: str = '1d', 
-                                  limit: int = 100) -> List[PriceData]:
-        """获取股票历史数据"""
-        # 这里可以实现从数据库或API获取历史数据
-        # 简化实现：从数据库获取
-        end_date = datetime.now()
-        
-        # 根据频率计算开始日期
-        if frequency == '1m':
-            start_date = end_date - timedelta(days=1)
-        elif frequency == '1d':
-            start_date = end_date - timedelta(days=limit)
-        elif frequency == '1w':
-            start_date = end_date - timedelta(weeks=limit)
-        else:
-            start_date = end_date - timedelta(days=30)
-        
-        return self.db.get_historical_prices(
-            symbol=symbol, 
-            market='',  # 需要根据实际情况确定market
-            frequency=frequency,
-            start_date=start_date,
-            end_date=end_date
+    async def fetch_historical_data(
+        self,
+        symbol: str,
+        frequency: str = '1d',
+        limit: int = 100,
+        market: str = '',
+    ) -> List[PriceData]:
+        """A 股指数日/周线历史数据，走 akshare sina backend。
+
+        前置：MONITOR_CONFIG 里的 A 股 daily/weekly 当前全部是指数
+        （沪深300 / 创业板指等），sina 个股 endpoint 在本机会被 reset，
+        所以暂时只支持指数。需要加个股时再扩 endpoint。
+        """
+        if frequency not in ('1d', '1w'):
+            logging.error(f"[StockFetcher] 不支持的历史频率: {frequency}")
+            return []
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, self._fetch_index_historical_sync, symbol, market, frequency, limit,
         )
+
+    def _fetch_index_historical_sync(
+        self, symbol: str, market: str, frequency: str, limit: int,
+    ) -> List[PriceData]:
+        try:
+            import akshare as ak
+            import pandas as pd
+        except ImportError:
+            logging.error("[StockFetcher] akshare/pandas 未安装，无法拉取 A 股历史数据")
+            return []
+
+        market_upper = (market or '').upper()
+        if market_upper not in ('SH', 'SZ'):
+            logging.error(
+                f"[StockFetcher] 历史数据仅支持 SH/SZ 指数, 收到 market={market!r} symbol={symbol}"
+            )
+            return []
+        ak_symbol = f"{market_upper.lower()}{symbol}"
+
+        try:
+            df = ak.stock_zh_index_daily(symbol=ak_symbol)
+        except Exception as e:
+            logging.error(f"[StockFetcher] akshare 拉取 {ak_symbol} 失败: {e}")
+            return []
+        if df is None or df.empty:
+            logging.warning(f"[StockFetcher] akshare {ak_symbol} 返回空")
+            return []
+
+        df = df.copy()
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.set_index('date').sort_index()
+
+        if frequency == '1w':
+            # W-FRI: 以周五为一周收盘（自然周对齐 A 股交易周）
+            df = df.resample('W-FRI').agg({
+                'open': 'first', 'high': 'max', 'low': 'min',
+                'close': 'last', 'volume': 'sum',
+            }).dropna()
+
+        df = df.tail(limit)
+        return [
+            PriceData(
+                symbol=symbol,
+                market=market_upper,
+                timestamp=ts.to_pydatetime(),
+                open=float(row['open']),
+                high=float(row['high']),
+                low=float(row['low']),
+                close=float(row['close']),
+                volume=float(row['volume']),
+                frequency=frequency,
+            )
+            for ts, row in df.iterrows()
+        ]

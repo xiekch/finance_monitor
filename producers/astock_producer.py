@@ -100,6 +100,7 @@ class AStockProducer(BaseProducer):
                     symbol=symbol,
                     frequency=fetcher_freq,
                     limit=limit,
+                    market=symbol_info.get('market', ''),
                 )
                 if not historical_data:
                     logging.warning(

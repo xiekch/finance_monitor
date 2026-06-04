@@ -1,4 +1,5 @@
 aiohttp
+akshare
 apscheduler
 langchain-core
 langchain-openai
