@@ -174,26 +174,53 @@ class TwitterApiIoClient:
             logging.info(f"  └ [{p.post_id}]{rt} {snippet}{suffix}")
         return result
 
+    _MAX_ATTEMPTS = 3
+    _RETRY_AFTER_DEFAULT = 6.0   # twitterapi.io free tier 1 req / 5s，留 1s 冗余
+
     def _get_with_retry(self, url: str, params: dict, label: str) -> dict:
+        """按错误类型分流：
+        - 429：优先读 Retry-After（数字秒），否则默认 6s
+        - 5xx / 网络错（Timeout / ConnectionError）：指数 backoff 1s→2s→4s
+        - 4xx 其他（401/403/404 等）：不重试，直接抛
+        """
         last_err: Optional[Exception] = None
-        for attempt in range(2):
+        for attempt in range(self._MAX_ATTEMPTS):
+            wait: Optional[float] = None
             try:
                 resp = self.session.get(url, params=params, timeout=self.timeout)
-                resp.raise_for_status()
-                payload = resp.json()
-                if payload.get("status") != "success":
-                    raise RuntimeError(
-                        f"api error: {payload.get('msg') or payload.get('message') or payload}"
-                    )
-                return payload
+                if resp.status_code == 429:
+                    retry_after = resp.headers.get("Retry-After", "")
+                    wait = float(retry_after) if retry_after.replace(".", "", 1).isdigit() else self._RETRY_AFTER_DEFAULT
+                    last_err = RuntimeError(f"429 Too Many Requests (Retry-After={retry_after or 'none'})")
+                else:
+                    resp.raise_for_status()
+                    payload = resp.json()
+                    if payload.get("status") != "success":
+                        raise RuntimeError(
+                            f"api error: {payload.get('msg') or payload.get('message') or payload}"
+                        )
+                    return payload
+            except requests.HTTPError as e:
+                status = e.response.status_code if e.response is not None else 0
+                if 400 <= status < 500:
+                    logging.error(f"[TwitterApiIoClient] {label} fatal {status}, no retry: {e}")
+                    raise RuntimeError(f"{label} failed: {e}") from e
+                last_err = e
+                wait = 1.0 * (2 ** attempt)
+            except (requests.Timeout, requests.ConnectionError) as e:
+                last_err = e
+                wait = 1.0 * (2 ** attempt)
             except Exception as e:
                 last_err = e
-                wait = 0.5 * (2 ** attempt)
+                wait = 1.0 * (2 ** attempt)
+
+            if attempt + 1 < self._MAX_ATTEMPTS:
                 logging.warning(
-                    f"[TwitterApiIoClient] {label} attempt {attempt + 1} failed: {e}; retry in {wait}s"
+                    f"[TwitterApiIoClient] {label} attempt {attempt + 1}/{self._MAX_ATTEMPTS} "
+                    f"failed: {last_err}; retry in {wait}s"
                 )
                 time.sleep(wait)
-        raise RuntimeError(f"{label} failed: {last_err}")
+        raise RuntimeError(f"{label} failed after {self._MAX_ATTEMPTS} attempts: {last_err}")
 
     @staticmethod
     def _parse(t: dict) -> SocialPost:

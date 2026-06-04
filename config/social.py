@@ -8,6 +8,8 @@ SOCIAL_CONFIG = {
 
     # 简报 cron 时段（小时，逗号分隔）
     "cron_hours": "8,20",
+    # 触发分钟，避开整点全网 API 高峰；保留 0~59 整数（apscheduler CronTrigger.minute 语义）
+    "cron_minute": 7,
     # 每次简报覆盖的回看窗口（仅作为 LLM prompt 上下文，不限制 since_id 增量）
     "window_hours": 12,
 
@@ -41,7 +43,8 @@ SOCIAL_CONFIG = {
         "name": "twitterapi_io",
         "api_key_env": "TWITTERAPI_IO_KEY",
         "base_url": "https://api.twitterapi.io",
-        "timeout_sec": 10,
+        # 20s：原 10s 与服务端响应时间相近，timeout 后立即 retry 会形成"双发"触发 429
+        "timeout_sec": 20,
         # 是否拉取 reply 推文。True 时一并抓 @某人 的回复（quote_tweet 不影响）
         "include_replies": False,
     },

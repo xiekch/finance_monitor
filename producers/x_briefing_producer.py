@@ -29,7 +29,10 @@ class XBriefingProducer(BaseProducer):
         ignore_schedule: bool = False,
     ):
         if trigger is None and not ignore_schedule:
-            trigger = CronTrigger(hour=SOCIAL_CONFIG["cron_hours"], minute=0)
+            trigger = CronTrigger(
+                hour=SOCIAL_CONFIG["cron_hours"],
+                minute=SOCIAL_CONFIG.get("cron_minute", 0),
+            )
         super().__init__(
             "XBriefingProducer",
             trigger=trigger,
