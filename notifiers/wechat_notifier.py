@@ -35,12 +35,20 @@ class WeChatNotifier:
             f"时间: {alert.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
         )
 
-    def send_text(self, content: str, max_bytes: int = 2000, max_parts: int = 3) -> bool:
+    def send_text(
+        self,
+        content: str,
+        max_bytes: int = 2000,
+        inter_part_sleep: float = 1.5,
+    ) -> bool:
         """发送 text 类型消息（msgtype=text）。
 
         企微 text 类型上限 2048 字节（中文 1 字 3 字节），URL 不会渲染为可点击。
-        超长时按 max_parts 段（默认 3）拆分依次推送；超过 max_parts*max_bytes 容量时
-        最后一段附截断提示。任一段失败即返回 False（已发段不回滚）。
+        超长时按字节预算拆分依次推送，全量发完不截断（段数不设上限）。
+
+        多段投递时序：企微网关不保证按到达顺序投递（实际观察过乱序），段间需要
+        足够窗口撑开。当前 inter_part_sleep=1.5s + 单段首次失败立即重试 1 次
+        （重试与下一段间也都保持该间隔）。任一段两次都失败即返回 False（已发段不回滚）。
         """
         if not content:
             logging.warning("[WeChatNotifier] send_text: 空内容，跳过发送")
@@ -48,17 +56,25 @@ class WeChatNotifier:
         if len(content.encode("utf-8")) <= max_bytes:
             return self._post_text(content)
 
-        parts = self._split_for_text(content, max_bytes=max_bytes, max_parts=max_parts)
+        parts = self._split_for_text(content, max_bytes=max_bytes)
         total = len(parts)
         all_ok = True
         for i, part in enumerate(parts, start=1):
             body = f"({i}/{total})\n{part}"
             ok = self._post_text(body)
-            all_ok = all_ok and ok
             if not ok:
-                logging.error(f"[WeChatNotifier] 分段 {i}/{total} 发送失败，已发段不回滚")
+                logging.warning(
+                    f"[WeChatNotifier] 分段 {i}/{total} 首发失败，{inter_part_sleep}s 后重试 1 次"
+                )
+                time.sleep(inter_part_sleep)
+                ok = self._post_text(body)
+                if not ok:
+                    logging.error(
+                        f"[WeChatNotifier] 分段 {i}/{total} 重试仍失败，已发段不回滚"
+                    )
+            all_ok = all_ok and ok
             if i < total:
-                time.sleep(0.3)
+                time.sleep(inter_part_sleep)
         return all_ok
 
     def _post_text(self, body: str) -> bool:
@@ -79,32 +95,21 @@ class WeChatNotifier:
             logging.error(f"[WeChatNotifier] text 发送异常: {e}")
             return False
 
-    def _split_for_text(self, content: str, max_bytes: int, max_parts: int) -> list:
-        """按字节预算把 content 切成最多 max_parts 段。
+    def _split_for_text(self, content: str, max_bytes: int) -> list:
+        """按字节预算把 content 切完，全量返回，段数不设上限。
 
-        预留 ~10 字节给 `(i/N)\n` 头；优先在 `\n\n`、再 `\n` 处切，最后字节硬切
-        （decode errors='ignore' 避免切中 utf-8 多字节字符）。最后一段若仍超容量，
-        附截断提示并截到字节预算内。
+        预留 ~12 字节给 `(i/N)\n` 头（N 最大可达 ~99）；优先在 `\n\n`、再 `\n` 处切，
+        最后字节硬切（decode errors='ignore' 避免切中 utf-8 多字节字符）。
         """
-        header_reserve = 10
+        header_reserve = 12
         budget = max_bytes - header_reserve
-        truncate_suffix = "\n\n（内容过长已截断，完整版见 SQLite briefings 表）"
-        suffix_bytes = len(truncate_suffix.encode("utf-8"))
 
         remaining = content
         parts = []
-        for slot in range(max_parts):
-            is_last = slot == max_parts - 1
+        while remaining:
             remaining_bytes = remaining.encode("utf-8")
             if len(remaining_bytes) <= budget:
                 parts.append(remaining)
-                remaining = ""
-                break
-            if is_last:
-                cap = budget - suffix_bytes
-                last = remaining_bytes[:cap].decode("utf-8", errors="ignore") + truncate_suffix
-                parts.append(last)
-                remaining = ""
                 break
             # 在 budget 字节窗口内找最靠后的换行边界（双换行优先）
             window = remaining_bytes[:budget].decode("utf-8", errors="ignore")
