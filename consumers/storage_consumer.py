@@ -36,7 +36,7 @@ class StorageConsumer(BaseConsumer):
             self._handle_briefing(message)
 
     def _handle_price(self, message: BaseMessage):
-        price_data = PriceData(**message.payload)
+        price_data = PriceData.from_dict(message.payload)
         if self.db.save_price_data(price_data):
             logging.info(f"[{self.consumer_name}] 数据已保存: {price_data.symbol} {price_data}")
         else:

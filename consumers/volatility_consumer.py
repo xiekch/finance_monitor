@@ -16,7 +16,7 @@ class VolatilityConsumer(BaseConsumer):
 
     def process_message(self, message: BaseMessage):
         """处理价格数据消息，分析波动"""
-        price_data = PriceData(**message.payload)
+        price_data = PriceData.from_dict(message.payload)
 
         frequency = FrequencyType(price_data.frequency)
         if frequency == FrequencyType.MINUTE:
