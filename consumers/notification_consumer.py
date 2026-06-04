@@ -3,10 +3,15 @@ from models.messages import BaseMessage, MessageType
 from notifiers.wechat_notifier import WeChatNotifier
 from config.social import SOCIAL_CONFIG
 import logging
+import threading
+from datetime import date as _date
 
 
 class NotificationConsumer(BaseConsumer):
     """通知发送消费者"""
+
+    # 日/周频告警去重；minute 不去重（按设计每次穿越阈值都推）
+    _DEDUP_FREQUENCIES = frozenset({"daily", "weekly"})
 
     def __init__(self):
         super().__init__("NotificationConsumer", [
@@ -16,6 +21,10 @@ class NotificationConsumer(BaseConsumer):
             # MessageType.SYSTEM_EVENT
         ])
         self.wechat_notifier = WeChatNotifier()
+        # key = (symbol, frequency, alert_date)
+        # 进程重启会清空 —— 重启后宁可漏一次也比误重发一遍可控
+        self._alerted_keys: set[tuple[str, str, _date]] = set()
+        self._dedup_lock = threading.Lock()
 
     def process_message(self, message: BaseMessage):
         mt = message.message_type
@@ -43,6 +52,18 @@ class NotificationConsumer(BaseConsumer):
             previous_price=alert_data["previous_price"],
             timestamp=datetime.fromisoformat(alert_data["timestamp"]),
         )
+
+        if alert.frequency in self._DEDUP_FREQUENCIES:
+            key = (alert.symbol, alert.frequency, alert.timestamp.date())
+            with self._dedup_lock:
+                if key in self._alerted_keys:
+                    logging.info(
+                        f"[{self.consumer_name}] 告警当天已推送，跳过: "
+                        f"{alert.name}({alert.symbol}) {alert.frequency}"
+                    )
+                    return
+                self._alerted_keys.add(key)
+
         if self.wechat_notifier.send_alert(alert):
             logging.info(f"[{self.consumer_name}] 告警通知发送成功: {alert.name}")
         else:
