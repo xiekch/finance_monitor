@@ -17,6 +17,7 @@ class MessageType(Enum):
     SYSTEM_EVENT = "system_event"  # 系统事件
     SOCIAL_POST_BATCH = "social_post_batch"   # 一批新拉到的推文
     AI_BRIEFING = "ai_briefing"               # LLM 已生成的简报
+    MARKET_BRIEFING = "market_briefing"       # 标的行情早报
 
 
 class FrequencyType(Enum):
@@ -212,6 +213,26 @@ class AIBriefingMessage(BaseMessage):
         )
 
 
+@dataclass
+class MarketBriefingMessage(BaseMessage):
+    """标的行情早报：watchlist 最近收盘价 + 日涨跌。"""
+    def __init__(
+        self,
+        payload: Dict[str, Any],
+        source: str,
+        timestamp: Optional[datetime] = None,
+        message_id: Optional[str] = None,
+        message_type: MessageType = MessageType.MARKET_BRIEFING,
+    ):
+        super().__init__(
+            message_type=message_type,
+            timestamp=timestamp,
+            source=source,
+            payload=payload,
+            message_id=message_id,
+        )
+
+
 # MessageType → 对应 BaseMessage 子类的注册表，给 Redis backend
 # 反序列化时按 type 路由用。新增 MessageType 时记得在这里加一条。
 # - PRICE_DATA 与 HISTORICAL_PRICE_DATA 共用 PriceDataMessage
@@ -224,4 +245,5 @@ MESSAGE_CLASSES: Dict[MessageType, type] = {
     MessageType.SYSTEM_EVENT: SystemEventMessage,
     MessageType.SOCIAL_POST_BATCH: SocialPostBatchMessage,
     MessageType.AI_BRIEFING: AIBriefingMessage,
+    MessageType.MARKET_BRIEFING: MarketBriefingMessage,
 }

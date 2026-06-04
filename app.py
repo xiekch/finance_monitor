@@ -14,6 +14,7 @@ from producers.astock_producer import AStockProducer
 from producers.usstock_producer import USStockProducer
 from producers.crypto_producer import CryptoProducer
 from producers.x_briefing_producer import XBriefingProducer
+from producers.market_briefing_producer import MarketBriefingProducer
 from consumers.volatility_consumer import VolatilityConsumer
 from consumers.notification_consumer import NotificationConsumer
 from consumers.storage_consumer import StorageConsumer
@@ -36,9 +37,10 @@ PRODUCER_REGISTRY: dict[str, tuple[type, dict]] = {
     "crypto_daily":   (CryptoProducer,  {"frequency": "daily"}),
     "crypto_weekly":  (CryptoProducer,  {"frequency": "weekly"}),
     "x_briefing":     (XBriefingProducer, {}),
+    "market_briefing":(MarketBriefingProducer, {}),
 }
 
-DEFAULT_PRODUCERS: list[str] = ["usstock_daily", "crypto_daily", "x_briefing"]
+DEFAULT_PRODUCERS: list[str] = ["usstock_daily", "crypto_daily", "x_briefing", "market_briefing"]
 
 
 def _using_redis_backend() -> bool:

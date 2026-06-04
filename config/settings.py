@@ -142,6 +142,11 @@ PRODUCER_SCHEDULE = {
     # X 简报 producer 自己从 SOCIAL_CONFIG['cron_hours'] 构造触发器；
     # 此处置 None 让 build_trigger 不注入，由 producer fallback。
     'x_briefing': None,
+    # 行情早报：每天 09:31（A 股开盘后 1 分钟）一次
+    'market_briefing': {
+        'type': 'cron',
+        'kwargs': {'hour': 9, 'minute': 31},
+    },
 }
 
 # 数据库配置

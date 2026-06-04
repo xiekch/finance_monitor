@@ -12,6 +12,7 @@ class NotificationConsumer(BaseConsumer):
         super().__init__("NotificationConsumer", [
             MessageType.VOLATILITY_ALERT,
             MessageType.AI_BRIEFING,
+            MessageType.MARKET_BRIEFING,
             # MessageType.SYSTEM_EVENT
         ])
         self.wechat_notifier = WeChatNotifier()
@@ -24,6 +25,8 @@ class NotificationConsumer(BaseConsumer):
             self._handle_system_event(message)
         elif mt == MessageType.AI_BRIEFING:
             self._handle_briefing(message)
+        elif mt == MessageType.MARKET_BRIEFING:
+            self._handle_market_briefing(message)
 
     def _handle_volatility_alert(self, message: BaseMessage):
         alert_data = message.payload
@@ -70,3 +73,20 @@ class NotificationConsumer(BaseConsumer):
             logging.info(f"[{self.consumer_name}] AI 简报推送成功 degraded={degraded}")
         else:
             logging.error(f"[{self.consumer_name}] AI 简报推送失败 degraded={degraded}")
+
+    def _handle_market_briefing(self, message: BaseMessage):
+        markdown = message.payload.get("markdown", "")
+        hit = message.payload.get("hit_count")
+        total = message.payload.get("row_count")
+        logging.info(
+            f"[{self.consumer_name}] 即将推送行情早报 hit={hit}/{total} "
+            f"chars={len(markdown)}:\n{markdown}"
+        )
+        if not markdown:
+            logging.warning(f"[{self.consumer_name}] 行情早报为空，跳过")
+            return
+        ok = self.wechat_notifier.send_text(markdown)
+        if ok:
+            logging.info(f"[{self.consumer_name}] 行情早报推送成功 hit={hit}/{total}")
+        else:
+            logging.error(f"[{self.consumer_name}] 行情早报推送失败 hit={hit}/{total}")
