@@ -27,7 +27,6 @@ class VolatilityConsumer(BaseConsumer):
             alert = self.volatility_analyzer.analyze_weekly_volatility(price_data)
         else:
             alert = None
-        logging.info(f"[{self.consumer_name}] 发现告警: {alert}")
 
         if alert:
             alert_message = VolatilityAlertMessage(
