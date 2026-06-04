@@ -44,36 +44,42 @@ class CryptoFetcher(BaseFetcher):
 
         return results
     
-    async def _fetch_single_crypto(self, session: aiohttp.ClientSession, 
+    async def _fetch_single_crypto(self, session: aiohttp.ClientSession,
                                  symbol_info: dict) -> Optional[PriceData]:
-        """获取单个加密货币数据"""
+        """获取单个加密货币的最新 1m K 线。
+
+        原实现走 /ticker/24hr，open/high/low 是 24 小时滚动统计，标 frequency='1m'
+        语义错位，会让分钟级波动比较拿到错误的 OHLC。改走 /klines?interval=1m&limit=1
+        拿真正的最新 1m K 线（注意这根可能尚未收盘）。
+        """
         symbol = symbol_info['symbol']
-        
-        # 使用Binance REST API获取最新价格
-        url = f"{self.api_config['binance']['base_url']}/api/v3/ticker/24hr"
-        params = {'symbol': symbol.upper()}
-        
+
+        url = f"{self.api_config['binance']['base_url']}/api/v3/klines"
+        params = {'symbol': symbol.upper(), 'interval': '1m', 'limit': 1}
+
         try:
             async with session.get(url, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    
-                    # 创建PriceData对象
-                    return PriceData(
-                        symbol=symbol,
-                        market=symbol_info.get('market', 'CRYPTO'),
-                        timestamp=datetime.now(),
-                        open=float(data.get('openPrice', 0)),
-                        high=float(data.get('highPrice', 0)),
-                        low=float(data.get('lowPrice', 0)),
-                        close=float(data.get('lastPrice', 0)),
-                        volume=float(data.get('volume', 0)),
-                        frequency='1m'
-                    )
-                else:
-                    logging.info(f"Binance API错误: {response.status}")
+                if response.status != 200:
+                    logging.info(f"Binance klines API错误 {symbol}: {response.status}")
                     return None
-                    
+                data = await response.json()
+                if not data:
+                    logging.warning(f"Binance klines 返回空 {symbol}")
+                    return None
+
+                item = data[-1]
+                # kline: [open_time, open, high, low, close, volume, close_time, ...]
+                return PriceData(
+                    symbol=symbol,
+                    market=symbol_info.get('market', 'CRYPTO'),
+                    timestamp=datetime.fromtimestamp(item[0] / 1000),
+                    open=float(item[1]),
+                    high=float(item[2]),
+                    low=float(item[3]),
+                    close=float(item[4]),
+                    volume=float(item[5]),
+                    frequency='1m',
+                )
         except Exception as e:
             logging.error(f"获取加密货币数据失败 {symbol}: {e}")
             return None
