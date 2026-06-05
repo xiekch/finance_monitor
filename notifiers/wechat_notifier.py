@@ -112,12 +112,14 @@ class WeChatNotifier:
                 parts.append(remaining)
                 break
             # 在 budget 字节窗口内找最靠后的换行边界（双换行优先）
+            # min_split: 切割点太靠前会产生几乎空的段，至少用掉 budget 的 1/4
             window = remaining_bytes[:budget].decode("utf-8", errors="ignore")
+            min_split = len(window) // 4
             split_at = window.rfind("\n\n")
-            if split_at <= 0:
+            if split_at < min_split:
                 split_at = window.rfind("\n")
-            if split_at <= 0:
-                split_at = len(window)  # 没有换行就硬切（字符边界由 decode 保证）
+            if split_at < min_split:
+                split_at = len(window)
             parts.append(remaining[:split_at].rstrip())
             remaining = remaining[split_at:].lstrip()
         return parts

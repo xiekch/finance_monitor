@@ -9,3 +9,5 @@ test.py
 dump.rdb
 # SQLite 行情数据库
 *.db
+# Claude Code
+.claude/
