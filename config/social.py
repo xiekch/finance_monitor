@@ -14,7 +14,7 @@ SOCIAL_CONFIG = {
     "window_hours": 12,
 
     # 关注的 X 账号白名单（不带 @）
-    # twitterapi.io free tier 限速 1 req / 5 sec，每账号最多翻 3 页（fetch_limit=50）
+    # twitterapi.io free tier 限速 1 req / 5 sec（fetch_limit=40）
     # → 平均 ~16s/账号；当前 10 个账号一轮约 2-3 分钟（cron 触发不阻塞主流程）
     "whitelist": [
         # 大模型核心人物（CEO / 技术领袖，独家信号密度最高）
@@ -34,7 +34,7 @@ SOCIAL_CONFIG = {
         "caseynewton",     # Platformer, AI 政策与公司深度
     ],
     # 单账号单次拉取上限
-    "fetch_limit_per_user": 50,
+    "fetch_limit_per_user": 40,
 
     # X 数据源。clients/social_client.py 按 name 派发到对应 client 类。
     # - twitterapi_io: free tier 限速 1 req / 5 sec；fetch_limit_per_user 通过 cursor 翻页凑齐
