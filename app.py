@@ -21,7 +21,7 @@ from consumers.storage_consumer import StorageConsumer
 from consumers.ai_briefing_consumer import AIBriefingConsumer
 from infra.message_queue import mq
 from models.messages import MessageType, SystemEventMessage
-from config.settings import PRODUCER_SCHEDULE, MQ_BACKEND
+from config.settings import PRODUCER_SCHEDULE, MQ_BACKEND, WECOM_CONFIG
 from config.social import SOCIAL_CONFIG, assert_social_env_ready
 
 
@@ -309,6 +309,12 @@ def parse_args(argv: list[str] | None = None):
         help=f"逗号分隔的 producer 短名，可选: {sorted(PRODUCER_REGISTRY)}; 不传则使用默认 {DEFAULT_PRODUCERS}",
     )
     parser.add_argument(
+        "--webhook",
+        type=str,
+        default=None,
+        help="企微推送 webhook URL，覆盖环境变量 WECOM_WEBHOOK_URL",
+    )
+    parser.add_argument(
         "--list-producers",
         action="store_true",
         default=False,
@@ -355,6 +361,9 @@ if __name__ == "__main__":
             suffix = f" ({extras})" if extras else ""
             print(f"  {key:16s} -> {cls.__name__}{suffix}")
         sys.exit(0)
+
+    if args.webhook:
+        WECOM_CONFIG['webhook_url'] = args.webhook
 
     app = ProducerConsumerApp()
 

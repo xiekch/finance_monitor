@@ -105,6 +105,9 @@ python3 -m venv .venv
 # 只启动指定 producer（逗号分隔）
 .venv/bin/python3 app.py --producers usstock_minute,crypto_minute
 
+# 指定企微推送 webhook（覆盖 .env 中的 WECOM_WEBHOOK_URL）
+.venv/bin/python3 app.py --webhook "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
+
 # 列出所有可选 producer 后退出
 .venv/bin/python3 app.py --list-producers
 ```
