@@ -15,6 +15,7 @@ from producers.usstock_producer import USStockProducer
 from producers.crypto_producer import CryptoProducer
 from producers.futures_producer import FuturesProducer
 from producers.x_briefing_producer import XBriefingProducer
+from producers.weibo_briefing_producer import WeiboBriefingProducer
 from producers.market_briefing_producer import MarketBriefingProducer
 from consumers.volatility_consumer import VolatilityConsumer
 from consumers.notification_consumer import NotificationConsumer
@@ -41,6 +42,7 @@ PRODUCER_REGISTRY: dict[str, tuple[type, dict]] = {
     "futures_daily":   (FuturesProducer,  {"frequency": "daily"}),
     "futures_weekly":  (FuturesProducer,  {"frequency": "weekly"}),
     "x_briefing":     (XBriefingProducer, {}),
+    "weibo_briefing": (WeiboBriefingProducer, {}),
     "market_briefing":(MarketBriefingProducer, {}),
 }
 
@@ -115,15 +117,21 @@ class ProducerConsumerApp:
             run_immediately: run once on startup.
             ignore_schedule: run only once, skip scheduling.
         """
-        # 如果 x_briefing 在请求列表里但 SOCIAL_CONFIG.enabled=False，剔除并 warn
+        # 社交 producer 的 enabled / env 检查
         if "x_briefing" in producer_keys and not SOCIAL_CONFIG["enabled"]:
             logging.warning(
                 "[App] SOCIAL_CONFIG.enabled=False，已从启动列表中剔除 x_briefing"
             )
             producer_keys = [k for k in producer_keys if k != "x_briefing"]
-        # 若 x_briefing 启用，做启动期 fail-fast 检查（缺 env / 空白名单）
-        if "x_briefing" in producer_keys:
-            assert_social_env_ready()
+        if "weibo_briefing" in producer_keys and not SOCIAL_CONFIG.get("weibo_enabled"):
+            logging.warning(
+                "[App] SOCIAL_CONFIG.weibo_enabled=False，已从启动列表中剔除 weibo_briefing"
+            )
+            producer_keys = [k for k in producer_keys if k != "weibo_briefing"]
+        check_weibo = "weibo_briefing" in producer_keys
+        if "x_briefing" in producer_keys or check_weibo:
+            assert_social_env_ready(check_weibo=check_weibo)
+        self._active_producer_keys = list(producer_keys)
 
         for key in producer_keys:
             cls, extra_kwargs = PRODUCER_REGISTRY[key]
@@ -152,10 +160,16 @@ class ProducerConsumerApp:
         notification_consumer = NotificationConsumer()
         self.consumers.append(notification_consumer)
 
-        # AI 简报消费者：仅在 SOCIAL_CONFIG.enabled=True 时启用
-        if SOCIAL_CONFIG["enabled"]:
-            self.consumers.append(AIBriefingConsumer())
-            logging.info("[App] AIBriefingConsumer 已启用")
+        # AI 简报消费者：仅在有社交 producer 启动时才启用
+        active = getattr(self, "_active_producer_keys", [])
+        platforms: set[str] = set()
+        if "x_briefing" in active:
+            platforms.add("x")
+        if "weibo_briefing" in active:
+            platforms.add("weibo")
+        if platforms and SOCIAL_CONFIG["enabled"]:
+            self.consumers.append(AIBriefingConsumer(expected_platforms=platforms))
+            logging.info(f"[App] AIBriefingConsumer 已启用 expected_platforms={platforms}")
         else:
             logging.info("[App] SOCIAL_CONFIG.enabled=False，AIBriefingConsumer 跳过")
 

@@ -20,19 +20,56 @@ from config.social import SOCIAL_CONFIG
 
 
 class AIBriefingConsumer(BaseConsumer):
-    def __init__(self, llm: Optional[LLMClient] = None):
+    """收到各平台的 SOCIAL_POST_BATCH 后，在内存聚合帖子。
+
+    收齐 ``expected_platforms`` 中所有平台的 batch 后，一次性调 LLM
+    生成混合简报。如果只启用一个平台，则收到即触发，与旧行为一致。
+    """
+
+    def __init__(
+        self,
+        expected_platforms: Optional[set[str]] = None,
+        llm: Optional[LLMClient] = None,
+    ):
         super().__init__("AIBriefingConsumer", [MessageType.SOCIAL_POST_BATCH])
         self.llm = llm or build_default_llm_client()
+        self.expected_platforms: set[str] = expected_platforms or {"x"}
+        self._received: set[str] = set()
+        self._buffer: list[SocialPost] = []
 
     def process_message(self, message: BaseMessage):
         posts = [SocialPost.from_dict(p) for p in message.payload.get("posts", [])]
+        platform = message.payload.get("platform", "x")
+
+        self._buffer.extend(posts)
+        self._received.add(platform)
+
+        logging.info(
+            f"[{self.consumer_name}] received batch platform={platform} "
+            f"posts={len(posts)} received={self._received} "
+            f"expected={self.expected_platforms}"
+        )
+
+        if self._received >= self.expected_platforms:
+            self._generate_briefing()
+        else:
+            pending = self.expected_platforms - self._received
+            logging.info(
+                f"[{self.consumer_name}] 等待其他平台: {pending}"
+            )
+
+    def _generate_briefing(self):
+        posts = self._buffer
+        self._buffer = []
+        self._received.clear()
+
         if not posts:
-            logging.warning(f"[{self.consumer_name}] empty batch received, skip")
+            logging.warning(f"[{self.consumer_name}] buffer empty, skip")
             return
 
         bi = BriefingInput(
             posts=posts,
-            window_hours=message.payload.get("window_hours", SOCIAL_CONFIG["window_hours"]),
+            window_hours=SOCIAL_CONFIG["window_hours"],
             max_chars=SOCIAL_CONFIG["push_max_chars"],
         )
 
@@ -54,13 +91,15 @@ class AIBriefingConsumer(BaseConsumer):
                 "window_hours": bi.window_hours,
             }
         except Exception as e:
-            logging.error(f"[{self.consumer_name}] LLM summarize failed: {e}", exc_info=True)
-            by_author = message.payload.get("stats", {}).get("by_author", {})
+            logging.error(
+                f"[{self.consumer_name}] LLM summarize failed: {e}",
+                exc_info=True,
+            )
             md = (
                 f"📰 AI 简报生成失败\n\n"
-                f"收到 {len(posts)} 条推文（{by_author}）\n"
+                f"收到 {len(posts)} 条帖子\n"
                 f"错误: {e}\n\n"
-                f"原始推文 ID 已写入 SQLite social_posts 表。"
+                f"原始帖子 ID 已写入 SQLite social_posts 表。"
             )
             payload = {
                 "markdown": md,

@@ -8,21 +8,18 @@ from apscheduler.triggers.base import BaseTrigger
 
 from producers.base_producer import BaseProducer
 from models.messages import BaseMessage, SocialPostBatchMessage
-from clients.social_client import SocialClient, build_default_social_client
+from clients.weibo_client import WeiboClient, build_default_weibo_client
 from models.social import SocialPost
 from storage.social_store import SocialPostStore
 from config.social import SOCIAL_CONFIG
 
 
-class XBriefingProducer(BaseProducer):
-    """每天 cron 触发，从白名单账号增量拉取 X 推文，发布 SOCIAL_POST_BATCH。
-
-    调度优先级：构造时显式注入的 ``trigger`` > 从 SOCIAL_CONFIG['cron_hours'] 派生的 CronTrigger。
-    """
+class WeiboBriefingProducer(BaseProducer):
+    """从白名单微博账号增量拉取动态，发布 SOCIAL_POST_BATCH。"""
 
     def __init__(
         self,
-        social: Optional[SocialClient] = None,
+        weibo: Optional[WeiboClient] = None,
         store: Optional[SocialPostStore] = None,
         trigger: Optional[BaseTrigger] = None,
         run_immediately: bool = False,
@@ -34,40 +31,44 @@ class XBriefingProducer(BaseProducer):
                 minute=SOCIAL_CONFIG.get("cron_minute", 0),
             )
         super().__init__(
-            "XBriefingProducer",
+            "WeiboBriefingProducer",
             trigger=trigger,
             run_immediately=run_immediately,
             ignore_schedule=ignore_schedule,
         )
-        self.social = social or build_default_social_client()
+        self.weibo = weibo or build_default_weibo_client()
         self.store = store or SocialPostStore()
 
     async def produce_data(self) -> Sequence[BaseMessage]:
-        whitelist: List[str] = SOCIAL_CONFIG["whitelist"]
-        limit: int = SOCIAL_CONFIG["fetch_limit_per_user"]
+        whitelist: List[str] = SOCIAL_CONFIG.get("weibo_whitelist", [])
+        limit: int = SOCIAL_CONFIG.get("weibo_fetch_limit_per_user",
+                                       SOCIAL_CONFIG["fetch_limit_per_user"])
         all_new: List[SocialPost] = []
 
-        for handle in whitelist:
-            since_id = self.store.get_latest_post_id(handle, platform="x")
+        for uid in whitelist:
+            since_id = self.store.get_latest_post_id(uid, platform="weibo")
             try:
-                posts = await self.social.fetch_user_timeline(handle, since_id, limit)
+                posts = await self.weibo.fetch_user_timeline(uid, since_id, limit)
             except Exception as e:
-                logging.warning(f"[XBriefingProducer] @{handle} fetch failed, skip: {e}")
+                logging.warning(
+                    f"[WeiboBriefingProducer] uid={uid} fetch failed, skip: {e}"
+                )
                 continue
             all_new.extend(posts)
 
         if not all_new:
-            logging.info("[XBriefingProducer] no new posts, skip publishing")
+            logging.info("[WeiboBriefingProducer] no new posts, skip publishing")
             return []
 
         by_author = dict(Counter(p.author for p in all_new))
         logging.info(
-            f"[XBriefingProducer] batch ready: {len(all_new)} posts, by_author={by_author}"
+            f"[WeiboBriefingProducer] batch ready: {len(all_new)} posts, "
+            f"by_author={by_author}"
         )
 
         payload = {
             "posts": [asdict(p) for p in all_new],
-            "platform": "x",
+            "platform": "weibo",
             "window_hours": SOCIAL_CONFIG["window_hours"],
             "stats": {
                 "total": len(all_new),

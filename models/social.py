@@ -5,20 +5,22 @@ from typing import List, Optional, Dict, Any
 
 @dataclass
 class SocialPost:
-    post_id: str          # 全局唯一，去重主键
-    author: str           # @handle（不带 @）
+    post_id: str          # 平台内唯一；跨平台去重靠 (platform, post_id)
+    author: str           # @handle（不带 @）或微博 screen_name
     author_name: str
     text: str
     created_at: str       # ISO8601 字符串，避免 datetime 跨进程序列化的坑
     url: str
     is_retweet: bool = False
     referenced_url: Optional[str] = None
+    platform: str = "x"   # "x" | "weibo"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "SocialPost":
+        d = {k: v for k, v in d.items() if k in cls.__dataclass_fields__}
         return cls(**d)
 
 

@@ -1,4 +1,4 @@
-"""X 推文 AI 简报相关配置。所有运行时参数集中在此，避免污染 settings.py。"""
+"""社交平台（X / 微博）AI 简报相关配置。所有运行时参数集中在此，避免污染 settings.py。"""
 
 import os
 
@@ -73,8 +73,8 @@ SOCIAL_CONFIG = {
 
     # Prompt 主体
     "prompt_template": (
-        "你是 AI 行业资讯编辑。下面是过去 {window_hours} 小时来自我关注账号的 X 推文（按时间正序）。"
-        "请严格筛选最有价值的内容（跳过纯营销、转推无评论、互动闲聊、日常寒暄），"
+        "你是 AI 行业资讯编辑。下面是过去 {window_hours} 小时来自我关注账号的 X 推文和微博动态（按时间正序）。"
+        "请严格筛选最有价值的内容（跳过纯营销、转推/转发无评论、互动闲聊、日常寒暄），"
         "按主题分组生成简报。\n\n"
         "关注信号与分组标签：\n"
         "- 🤖 AI 技术：agent / multi-agent、模型发布、训练 / 推理、开源、benchmark\n"
@@ -83,7 +83,7 @@ SOCIAL_CONFIG = {
         "格式（请严格遵守每一条）：\n"
         "- 标题：每组用 `### emoji 主题名` 三级标题；emoji 严格三选一（🤖 / 💰 / 💡），禁止使用其他任何 emoji\n"
         "- 推文条目：用 `- @作者: 一句话摘要 [原文链接](URL)` 列具体推文\n"
-        "  - `@作者`：填**推文的真实原作者**。若 text 以 `RT @某人:` 开头，原作者是 `@某人`（不是上方 `[...]` 标记的 timeline 拥有者）\n"
+        "  - `@作者`：填**帖子的真实原作者**。X 转推以 `RT @某人:` 开头时原作者是 `@某人`；微博转发以 `转发 @某人:` 开头时同理\n"
         "  - 摘要：用一句话提炼推文要点，保留关键数字 / 专有名词 / 主体动作；删除情绪、感叹、纯营销\n"
         "  - 链接：固定写成 markdown 格式 `[原文链接](URL)`，URL 必须包在 `()` 里，**禁止裸 URL**\n"
         "- 数量硬限：所有分组的推文条目加起来不得超过 20 条。超过 20 必须砍掉价值最低的条目。\n"
@@ -92,10 +92,21 @@ SOCIAL_CONFIG = {
     ),
     # 推送给企微的硬上限（4096 字节内安全冗余）
     "push_max_chars": 3000,
+
+    # ── 微博 ──
+    "weibo_enabled": False,
+    # 微博用户 UID 列表（数字字符串）
+    "weibo_whitelist": [],
+    "weibo_fetch_limit_per_user": 50,
+    "weibo_provider": {
+        "api_key_env": "WEIBO_ACCESS_TOKEN",
+        "base_url": "https://api.weibo.com/2",
+        "timeout_sec": 10,
+    },
 }
 
 
-def assert_social_env_ready():
+def assert_social_env_ready(check_weibo: bool = False):
     """启动期 fail-fast：enabled=true 但缺关键 env 时立即报错。"""
     if not SOCIAL_CONFIG["enabled"]:
         return
@@ -104,12 +115,20 @@ def assert_social_env_ready():
         env_name = SOCIAL_CONFIG[prov_key]["api_key_env"]
         if not os.getenv(env_name):
             missing.append(env_name)
+    if check_weibo:
+        env_name = SOCIAL_CONFIG["weibo_provider"]["api_key_env"]
+        if not os.getenv(env_name):
+            missing.append(env_name)
     if missing:
         raise RuntimeError(
             f"SOCIAL_CONFIG.enabled=True 但以下环境变量缺失: {missing}；"
             f"请在 .env 中设置或将 enabled 设为 False。"
         )
-    if not SOCIAL_CONFIG["whitelist"]:
+    if not SOCIAL_CONFIG["whitelist"] and not check_weibo:
         raise RuntimeError(
             "SOCIAL_CONFIG.whitelist 为空；空跑会浪费 LLM 配额，请至少配置 1 个账号。"
+        )
+    if check_weibo and not SOCIAL_CONFIG.get("weibo_whitelist"):
+        raise RuntimeError(
+            "SOCIAL_CONFIG.weibo_whitelist 为空；空跑会浪费 API 配额，请至少配置 1 个 UID。"
         )
