@@ -117,17 +117,7 @@ class ProducerConsumerApp:
             run_immediately: run once on startup.
             ignore_schedule: run only once, skip scheduling.
         """
-        # 社交 producer 的 enabled / env 检查
-        if "x_briefing" in producer_keys and not SOCIAL_CONFIG["enabled"]:
-            logging.warning(
-                "[App] SOCIAL_CONFIG.enabled=False，已从启动列表中剔除 x_briefing"
-            )
-            producer_keys = [k for k in producer_keys if k != "x_briefing"]
-        if "weibo_briefing" in producer_keys and not SOCIAL_CONFIG.get("weibo_enabled"):
-            logging.warning(
-                "[App] SOCIAL_CONFIG.weibo_enabled=False，已从启动列表中剔除 weibo_briefing"
-            )
-            producer_keys = [k for k in producer_keys if k != "weibo_briefing"]
+        # 社交 producer env 检查
         check_weibo = "weibo_briefing" in producer_keys
         if "x_briefing" in producer_keys or check_weibo:
             assert_social_env_ready(check_weibo=check_weibo)
@@ -167,11 +157,9 @@ class ProducerConsumerApp:
             platforms.add("x")
         if "weibo_briefing" in active:
             platforms.add("weibo")
-        if platforms and SOCIAL_CONFIG["enabled"]:
+        if platforms:
             self.consumers.append(AIBriefingConsumer(expected_platforms=platforms))
             logging.info(f"[App] AIBriefingConsumer 已启用 expected_platforms={platforms}")
-        else:
-            logging.info("[App] SOCIAL_CONFIG.enabled=False，AIBriefingConsumer 跳过")
 
         print("消费者设置完成")
 

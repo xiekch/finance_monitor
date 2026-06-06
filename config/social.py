@@ -1,11 +1,8 @@
-"""社交平台（X / 微博）AI 简报相关配置。所有运行时参数集中在此，避免污染 settings.py。"""
+"""社交平台AI简报相关配置。所有运行时参数集中在此，避免污染 settings.py。"""
 
 import os
 
 SOCIAL_CONFIG = {
-    # 总开关：False 时 XBriefingProducer / AIBriefingConsumer 不实例化
-    "enabled": True,
-
     # 简报 cron 时段（小时，逗号分隔）
     "cron_hours": "8,20",
     # 触发分钟，避开整点全网 API 高峰；保留 0~59 整数（apscheduler CronTrigger.minute 语义）
@@ -73,8 +70,8 @@ SOCIAL_CONFIG = {
 
     # Prompt 主体
     "prompt_template": (
-        "你是 AI 行业资讯编辑。下面是过去 {window_hours} 小时来自我关注账号的 X 推文和微博动态（按时间正序）。"
-        "请严格筛选最有价值的内容（跳过纯营销、转推/转发无评论、互动闲聊、日常寒暄），"
+        "你是 AI 行业资讯编辑。下面是过去 {window_hours} 小时来自我关注账号的推文（按时间正序）。"
+        "请严格筛选最有价值的内容（跳过纯营销、转发无评论、互动闲聊、日常寒暄），"
         "按主题分组生成简报。\n\n"
         "关注信号与分组标签：\n"
         "- 🤖 AI 技术：agent / multi-agent、模型发布、训练 / 推理、开源、benchmark\n"
@@ -83,9 +80,9 @@ SOCIAL_CONFIG = {
         "格式（请严格遵守每一条）：\n"
         "- 标题：每组用 `### emoji 主题名` 三级标题；emoji 严格三选一（🤖 / 💰 / 💡），禁止使用其他任何 emoji\n"
         "- 推文条目：用 `- @作者: 一句话摘要 [原文链接](URL)` 列具体推文\n"
-        "  - `@作者`：填**帖子的真实原作者**。X 转推以 `RT @某人:` 开头时原作者是 `@某人`；微博转发以 `转发 @某人:` 开头时同理\n"
+        "  - `@作者`：填**帖子的真实原作者**。X 转推以 `RT @某人:` 开头时原作者是 `@某人`\n"
         "  - 摘要：用一句话提炼推文要点，保留关键数字 / 专有名词 / 主体动作；删除情绪、感叹、纯营销\n"
-        "  - 链接：固定写成 markdown 格式 `[原文链接](URL)`，URL 必须包在 `()` 里，**禁止裸 URL**\n"
+        "  - 链接：固定写成 markdown 格式 `[原文链接](URL)`，URL 必须包在 `()` 里\n"
         "- 数量硬限：所有分组的推文条目加起来不得超过 20 条。超过 20 必须砍掉价值最低的条目。\n"
         "- 整体：Markdown，不超过 {max_chars} 字符；直接从第一组标题开始，不要前言、客套、结尾总结\n\n"
         "推文清单：\n{posts_block}"
@@ -94,7 +91,6 @@ SOCIAL_CONFIG = {
     "push_max_chars": 3000,
 
     # ── 微博 ──
-    "weibo_enabled": False,
     # 微博用户 UID 列表（数字字符串）
     "weibo_whitelist": [],
     "weibo_fetch_limit_per_user": 50,
@@ -107,9 +103,7 @@ SOCIAL_CONFIG = {
 
 
 def assert_social_env_ready(check_weibo: bool = False):
-    """启动期 fail-fast：enabled=true 但缺关键 env 时立即报错。"""
-    if not SOCIAL_CONFIG["enabled"]:
-        return
+    """启动期 fail-fast：缺关键 env 时立即报错。"""
     missing = []
     for prov_key in ("social_provider", "llm_provider"):
         env_name = SOCIAL_CONFIG[prov_key]["api_key_env"]
