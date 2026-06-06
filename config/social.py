@@ -24,14 +24,15 @@ SOCIAL_CONFIG = {
         "DarioAmodei",     # Anthropic CEO
         "demishassabis",   # Google DeepMind CEO
         "gdb",             # Greg Brockman, OpenAI President
+        "ylecun",          # Yann LeCun, Meta AI 首席科学家
+        "OpenAI",          # OpenAI 官方
 
         # 投资视角
         "naval",           # Naval Ravikant
 
         # 科技媒体 / 记者（独家爆料）
-        "amir",            # Amir Efrati, The Information AI 主笔
+        "theinformation",  # The Information 科技商业深度报道
         "EricNewcomer",    # Newcomer newsletter, AI / VC 独家
-        "caseynewton",     # Platformer, AI 政策与公司深度
     ],
     # 单账号单次拉取上限
     "fetch_limit_per_user": 40,
