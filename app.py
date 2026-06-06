@@ -329,8 +329,9 @@ def parse_args(argv: list[str] | None = None):
     parser.add_argument(
         "--webhook",
         type=str,
+        action="append",
         default=None,
-        help="企微推送 webhook URL，覆盖环境变量 WECOM_WEBHOOK_URL",
+        help="企微推送 webhook URL（可多次指定），覆盖环境变量 WECOM_WEBHOOK_URL",
     )
     parser.add_argument(
         "--list-producers",
@@ -381,7 +382,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if args.webhook:
-        WECOM_CONFIG['webhook_url'] = args.webhook
+        WECOM_CONFIG['webhook_urls'] = args.webhook
 
     app = ProducerConsumerApp()
 

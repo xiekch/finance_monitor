@@ -7,10 +7,10 @@ from config.settings import WECOM_CONFIG
 
 
 class WeChatNotifier:
-    """企业微信通知器"""
+    """企业微信通知器，支持同时推送到多个 webhook"""
 
     def __init__(self):
-        self.webhook_url = WECOM_CONFIG['webhook_url']
+        self.webhook_urls: list[str] = WECOM_CONFIG['webhook_urls']
         self.session = requests.Session()
 
     def send_alert(self, alert: VolatilityAlert) -> bool:
@@ -80,20 +80,24 @@ class WeChatNotifier:
     def _post_text(self, body: str) -> bool:
         headers = {"Content-Type": "application/json"}
         data = {"msgtype": "text", "text": {"content": body}}
-        try:
-            response = self.session.post(
-                self.webhook_url, headers=headers, data=json.dumps(data), timeout=10,
-            )
-            if response.status_code == 200:
-                logging.info(f"[WeChatNotifier] text 发送成功，字节={len(body.encode('utf-8'))}")
-                return True
-            logging.error(
-                f"[WeChatNotifier] text 发送失败: {response.status_code} - {response.text}"
-            )
-            return False
-        except Exception as e:
-            logging.error(f"[WeChatNotifier] text 发送异常: {e}")
-            return False
+        payload = json.dumps(data)
+        all_ok = True
+        for url in self.webhook_urls:
+            try:
+                response = self.session.post(
+                    url, headers=headers, data=payload, timeout=10,
+                )
+                if response.status_code == 200:
+                    logging.info(f"[WeChatNotifier] text 发送成功，字节={len(body.encode('utf-8'))}")
+                else:
+                    logging.error(
+                        f"[WeChatNotifier] text 发送失败: {response.status_code} - {response.text}"
+                    )
+                    all_ok = False
+            except Exception as e:
+                logging.error(f"[WeChatNotifier] text 发送异常: {e}")
+                all_ok = False
+        return all_ok
 
     def _split_for_text(self, content: str, max_bytes: int) -> list:
         """按字节预算把 content 切完，全量返回，段数不设上限。
@@ -138,17 +142,21 @@ class WeChatNotifier:
             body = body[:max_chars] + "\n\n_（内容过长已截断，完整版见 SQLite briefings 表）_"
         headers = {"Content-Type": "application/json"}
         data = {"msgtype": "markdown", "markdown": {"content": body}}
-        try:
-            response = self.session.post(
-                self.webhook_url, headers=headers, data=json.dumps(data), timeout=10,
-            )
-            if response.status_code == 200:
-                logging.info(f"[WeChatNotifier] markdown 发送成功，长度={len(body)}")
-                return True
-            logging.error(
-                f"[WeChatNotifier] markdown 发送失败: {response.status_code} - {response.text}"
-            )
-            return False
-        except Exception as e:
-            logging.error(f"[WeChatNotifier] markdown 发送异常: {e}")
-            return False
+        payload = json.dumps(data)
+        all_ok = True
+        for url in self.webhook_urls:
+            try:
+                response = self.session.post(
+                    url, headers=headers, data=payload, timeout=10,
+                )
+                if response.status_code == 200:
+                    logging.info(f"[WeChatNotifier] markdown 发送成功，长度={len(body)}")
+                else:
+                    logging.error(
+                        f"[WeChatNotifier] markdown 发送失败: {response.status_code} - {response.text}"
+                    )
+                    all_ok = False
+            except Exception as e:
+                logging.error(f"[WeChatNotifier] markdown 发送异常: {e}")
+                all_ok = False
+        return all_ok

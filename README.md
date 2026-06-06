@@ -60,7 +60,8 @@
 ```env
 ITICK_TOKEN=your_itick_token
 FINAGE_API_KEY=your_finage_key
-WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
+# 多个 webhook 用逗号分隔
+WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=aaa,https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=bbb
 
 REDIS_HOST=localhost
 REDIS_PORT=6379
@@ -105,8 +106,8 @@ python3 -m venv .venv
 # 只启动指定 producer（逗号分隔）
 .venv/bin/python3 app.py --producers usstock_minute,crypto_minute
 
-# 指定企微推送 webhook（覆盖 .env 中的 WECOM_WEBHOOK_URL）
-.venv/bin/python3 app.py --webhook "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
+# 指定企微推送 webhook（可多次指定，覆盖 .env 中的 WECOM_WEBHOOK_URL）
+.venv/bin/python3 app.py --webhook "https://...?key=aaa" --webhook "https://...?key=bbb"
 
 # 列出所有可选 producer 后退出
 .venv/bin/python3 app.py --list-producers

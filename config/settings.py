@@ -32,9 +32,11 @@ API_CONFIG = {
     }
 }
 
-# 企业微信配置
+# 企业微信配置（支持多个 webhook，逗号分隔）
 WECOM_CONFIG = {
-    'webhook_url': os.getenv('WECOM_WEBHOOK_URL', '')
+    'webhook_urls': [
+        u.strip() for u in os.getenv('WECOM_WEBHOOK_URL', '').split(',') if u.strip()
+    ],
 }
 
 # 监控配置
