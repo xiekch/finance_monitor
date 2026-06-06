@@ -13,6 +13,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from producers.astock_producer import AStockProducer
 from producers.usstock_producer import USStockProducer
 from producers.crypto_producer import CryptoProducer
+from producers.futures_producer import FuturesProducer
 from producers.x_briefing_producer import XBriefingProducer
 from producers.market_briefing_producer import MarketBriefingProducer
 from consumers.volatility_consumer import VolatilityConsumer
@@ -36,6 +37,9 @@ PRODUCER_REGISTRY: dict[str, tuple[type, dict]] = {
     "crypto_minute":  (CryptoProducer,  {"frequency": "minute"}),
     "crypto_daily":   (CryptoProducer,  {"frequency": "daily"}),
     "crypto_weekly":  (CryptoProducer,  {"frequency": "weekly"}),
+    "futures_minute":  (FuturesProducer,  {"frequency": "minute"}),
+    "futures_daily":   (FuturesProducer,  {"frequency": "daily"}),
+    "futures_weekly":  (FuturesProducer,  {"frequency": "weekly"}),
     "x_briefing":     (XBriefingProducer, {}),
     "market_briefing":(MarketBriefingProducer, {}),
 }
