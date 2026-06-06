@@ -37,54 +37,46 @@ WECOM_CONFIG = {
     'webhook_url': os.getenv('WECOM_WEBHOOK_URL', '')
 }
 
-# 监控配置 - 完整的配置
+# 监控配置
+# 按 asset_type 分组，frequency 在每条 item 内；同标的不同频次各一条。
 MONITOR_CONFIG = {
-    'minute': {
-        'stocks': [
-            {'name': '腾讯控股', 'symbol': '00700', 'market': 'HK', 'threshold': 1.5},
-            {'name': '贵州茅台', 'symbol': '600519', 'market': 'SH', 'threshold': 1.5},
-            {'name': '苹果', 'symbol': 'AAPL', 'market': 'US', 'threshold': 2.0},
-            {'name': '特斯拉', 'symbol': 'TSLA', 'market': 'US', 'threshold': 2.0},
-        ],
-        'crypto': [
-            {'name': 'Bitcoin', 'symbol': 'BTCUSDT', 'market': 'CRYPTO', 'threshold': 3.0},
-            {'name': 'Ethereum', 'symbol': 'ETHUSDT', 'market': 'CRYPTO', 'threshold': 3.0},
-        ],
-        'futures': [
-            {'name': '黄金主力', 'symbol': 'AU0', 'market': 'FUT', 'threshold': 1.0},
-            {'name': '原油主力', 'symbol': 'CL', 'market': 'FUT', 'threshold': 1.5},
-        ]
-    },
-    'daily': {
-        'stocks': [
-            {'name': '沪深300', 'symbol': '000300', 'market': 'SH', 'threshold': 3.0},
-            {'name': '创业板指', 'symbol': '399006', 'market': 'SZ', 'threshold': 4.0},
-            {'name': '纳斯达克', 'symbol': '^NDX', 'market': 'US', 'threshold': 1},
-            {'name': '苹果', 'symbol': 'AAPL', 'market': 'US', 'threshold': 1.5},
-            {'name': '特斯拉', 'symbol': 'TSLA', 'market': 'US', 'threshold': 2.0},   
-        ],
-        'crypto': [
-            {'name': 'Bitcoin', 'symbol': 'BTCUSDT', 'market': 'CRYPTO', 'threshold': 2.0},
-            {'name': 'Ethereum', 'symbol': 'ETHUSDT', 'market': 'CRYPTO', 'threshold': 3.0},
-        ],
-        'futures': [
-            {'name': '黄金主力', 'symbol': 'AU0', 'market': 'FUT', 'threshold': 2.5},
-            {'name': '原油主力', 'symbol': 'CL', 'market': 'FUT', 'threshold': 3.0},
-        ]
-    },
-    'weekly': {
-        'stocks': [
-            {'name': '沪深300', 'symbol': '000300', 'market': 'SH', 'threshold': 5.0},
-            {'name': '纳斯达克', 'symbol': '^NDX', 'market': 'US', 'threshold': 4.0},
-        ],
-        'crypto': [
-            {'name': 'Bitcoin', 'symbol': 'BTCUSDT', 'market': 'CRYPTO', 'threshold': 15.0},
-            {'name': 'Ethereum', 'symbol': 'ETHUSDT', 'market': 'CRYPTO', 'threshold': 18.0},
-        ],
-        'futures': [
-            {'name': '黄金主力', 'symbol': 'AU0', 'market': 'FUT', 'threshold': 4.0},
-        ]
-    }
+    'stocks': [
+        # minute
+        {'name': '腾讯控股', 'symbol': '00700', 'market': 'HK', 'frequency': 'minute', 'threshold': 1.5},
+        {'name': '贵州茅台', 'symbol': '600519', 'market': 'SH', 'frequency': 'minute', 'threshold': 1.5},
+        {'name': '苹果', 'symbol': 'AAPL', 'market': 'US', 'frequency': 'minute', 'threshold': 2.0},
+        {'name': '特斯拉', 'symbol': 'TSLA', 'market': 'US', 'frequency': 'minute', 'threshold': 2.0},
+        # daily
+        {'name': '沪深300', 'symbol': '000300', 'market': 'SH', 'frequency': 'daily', 'threshold': 3.0},
+        {'name': '创业板指', 'symbol': '399006', 'market': 'SZ', 'frequency': 'daily', 'threshold': 4.0},
+        {'name': '纳斯达克', 'symbol': '^NDX', 'market': 'US', 'frequency': 'daily', 'threshold': 1},
+        {'name': '苹果', 'symbol': 'AAPL', 'market': 'US', 'frequency': 'daily', 'threshold': 1.5},
+        {'name': '特斯拉', 'symbol': 'TSLA', 'market': 'US', 'frequency': 'daily', 'threshold': 2.0},
+        # weekly
+        {'name': '沪深300', 'symbol': '000300', 'market': 'SH', 'frequency': 'weekly', 'threshold': 5.0},
+        {'name': '纳斯达克', 'symbol': '^NDX', 'market': 'US', 'frequency': 'weekly', 'threshold': 4.0},
+    ],
+    'crypto': [
+        # minute
+        {'name': 'Bitcoin', 'symbol': 'BTCUSDT', 'market': 'CRYPTO', 'frequency': 'minute', 'threshold': 3.0},
+        {'name': 'Ethereum', 'symbol': 'ETHUSDT', 'market': 'CRYPTO', 'frequency': 'minute', 'threshold': 3.0},
+        # daily
+        {'name': 'Bitcoin', 'symbol': 'BTCUSDT', 'market': 'CRYPTO', 'frequency': 'daily', 'threshold': 2.0},
+        {'name': 'Ethereum', 'symbol': 'ETHUSDT', 'market': 'CRYPTO', 'frequency': 'daily', 'threshold': 3.0},
+        # weekly
+        {'name': 'Bitcoin', 'symbol': 'BTCUSDT', 'market': 'CRYPTO', 'frequency': 'weekly', 'threshold': 15.0},
+        {'name': 'Ethereum', 'symbol': 'ETHUSDT', 'market': 'CRYPTO', 'frequency': 'weekly', 'threshold': 18.0},
+    ],
+    'futures': [
+        # minute
+        {'name': '黄金主力', 'symbol': 'AU0', 'market': 'FUT', 'frequency': 'minute', 'threshold': 1.0},
+        {'name': '原油主力', 'symbol': 'SC0', 'market': 'FUT', 'frequency': 'minute', 'threshold': 1.5},
+        # daily
+        {'name': '黄金主力', 'symbol': 'AU0', 'market': 'FUT', 'frequency': 'daily', 'threshold': 2.5},
+        {'name': '原油主力', 'symbol': 'SC0', 'market': 'FUT', 'frequency': 'daily', 'threshold': 3.0},
+        # weekly
+        {'name': '黄金主力', 'symbol': 'AU0', 'market': 'FUT', 'frequency': 'weekly', 'threshold': 4.0},
+    ],
 }
 
 # Producer 调度配置
@@ -138,6 +130,19 @@ PRODUCER_SCHEDULE = {
     'crypto_weekly': {
         'type': 'cron',
         'kwargs': {'day_of_week': 'mon', 'hour': 5, 'minute': 0},
+    },
+    # 期货（日盘 + 夜盘）
+    'futures_minute': {
+        'type': 'cron',
+        'kwargs': {'hour': '9-14,21-23,0-2', 'minute': '*/5', 'day_of_week': 'mon-fri'},
+    },
+    'futures_daily': {
+        'type': 'cron',
+        'kwargs': {'hour': 15, 'minute': 30, 'day_of_week': 'mon-fri'},
+    },
+    'futures_weekly': {
+        'type': 'cron',
+        'kwargs': {'day_of_week': 'sat', 'hour': 8, 'minute': 0},
     },
     # X 简报 producer 自己从 SOCIAL_CONFIG['cron_hours'] 构造触发器；
     # 此处置 None 让 build_trigger 不注入，由 producer fallback。

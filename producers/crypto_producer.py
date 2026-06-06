@@ -45,7 +45,7 @@ class CryptoProducer(BaseProducer):
         self.crypto_fetcher = CryptoFetcher(API_CONFIG)
 
     async def produce_data(self) -> Sequence[PriceDataMessage]:
-        symbols = MONITOR_CONFIG.get(self.frequency, {}).get('crypto', [])
+        symbols = [s for s in MONITOR_CONFIG.get('crypto', []) if s['frequency'] == self.frequency]
         if not symbols:
             logging.warning(f"[{self.producer_name}] 未找到加密货币标的配置")
             return []

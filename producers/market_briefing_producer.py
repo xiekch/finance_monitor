@@ -10,6 +10,7 @@ from models.market import PriceData
 from storage.market_db import MarketDataDB
 from fetchers.us_stock_yf_fetcher import USStockYfFetcher
 from fetchers.crypto_fetcher import CryptoFetcher
+from fetchers.futures_fetcher import FuturesFetcher
 from config.settings import API_CONFIG, MONITOR_CONFIG
 
 
@@ -28,8 +29,8 @@ _US_MARKETS = ("US", "NASDAQ", "NYSE")
 class MarketBriefingProducer(BaseProducer):
     """每日早报 producer：三频去重合集 → 最近两条 daily K → markdown 推送。
 
-    数据策略：DB 优先，缺数据时回落 yfinance(美股)/Binance(crypto)；
-    其他市场（A 股/港股/期货）无 fetcher fallback，缺数据则标记 "暂无"。
+    数据策略：DB 优先，缺数据时回落 yfinance(美股)/Binance(crypto)/akshare(期货)；
+    其他市场（A 股/港股）无 fetcher fallback，缺数据则标记 "暂无"。
     """
 
     def __init__(
@@ -47,6 +48,7 @@ class MarketBriefingProducer(BaseProducer):
         self.db = MarketDataDB()
         self.us_fetcher = USStockYfFetcher(API_CONFIG)
         self.crypto_fetcher = CryptoFetcher(API_CONFIG)
+        self.futures_fetcher = FuturesFetcher(API_CONFIG)
 
     async def produce_data(self) -> Sequence[BaseMessage]:
         watchlist = self._collect_watchlist()
@@ -74,20 +76,18 @@ class MarketBriefingProducer(BaseProducer):
         return [MarketBriefingMessage(payload=payload, source=self.producer_name)]
 
     def _collect_watchlist(self) -> List[dict]:
-        """合并 minute/daily/weekly 三频的所有 asset，按 (symbol, market) 去重。"""
+        """合并所有 asset，按 (symbol, market) 去重。"""
         seen: dict = {}
-        for frequency in ("minute", "daily", "weekly"):
-            asset_types = MONITOR_CONFIG.get(frequency, {})
-            for asset_list in asset_types.values():
-                for asset in asset_list:
-                    key = (asset["symbol"], asset.get("market", ""))
-                    if key in seen:
-                        continue
-                    seen[key] = {
-                        "name": asset.get("name", asset["symbol"]),
-                        "symbol": asset["symbol"],
-                        "market": asset.get("market", ""),
-                    }
+        for asset_list in MONITOR_CONFIG.values():
+            for asset in asset_list:
+                key = (asset["symbol"], asset.get("market", ""))
+                if key in seen:
+                    continue
+                seen[key] = {
+                    "name": asset.get("name", asset["symbol"]),
+                    "symbol": asset["symbol"],
+                    "market": asset.get("market", ""),
+                }
         return list(seen.values())
 
     async def _get_two_daily_closes(
@@ -138,6 +138,10 @@ class MarketBriefingProducer(BaseProducer):
                 return await self.crypto_fetcher.fetch_historical_data(
                     symbol=symbol, frequency="1d",
                     start_date=start, end_date=end,
+                )
+            if market == "FUT":
+                return await self.futures_fetcher.fetch_historical_data(
+                    symbol=symbol, frequency="1d", limit=7, market="FUT",
                 )
             logging.info(
                 f"[{self.producer_name}] {symbol}({market}) 无 fetch fallback"

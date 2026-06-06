@@ -156,7 +156,7 @@ class USStockProducer(BaseProducer):
         )
 
     def _get_us_stock_symbols(self, frequency: str) -> List[dict]:
-        all_symbols = MONITOR_CONFIG.get(frequency, {}).get('stocks', [])
+        all_symbols = [s for s in MONITOR_CONFIG.get('stocks', []) if s['frequency'] == frequency]
         us_stock_symbols = []
         for symbol_info in all_symbols:
             market = symbol_info.get('market', '')

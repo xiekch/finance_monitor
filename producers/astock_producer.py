@@ -140,5 +140,5 @@ class AStockProducer(BaseProducer):
         return messages
 
     def _get_a_stock_symbols(self, frequency: str) -> List[dict]:
-        all_symbols = MONITOR_CONFIG.get(frequency, {}).get('stocks', [])
+        all_symbols = [s for s in MONITOR_CONFIG.get('stocks', []) if s['frequency'] == frequency]
         return [s for s in all_symbols if s.get('market') in self._A_STOCK_MARKETS]

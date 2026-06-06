@@ -11,16 +11,16 @@ class ThresholdManager:
         self._build_caches()
 
     def _build_caches(self):
-        for frequency, asset_types in MONITOR_CONFIG.items():
-            for asset_type, assets in asset_types.items():
-                for asset in assets:
-                    symbol = asset['symbol']
-                    market = asset.get('market', '')
-                    key = self._get_cache_key(symbol, market, frequency)
-                    self.threshold_cache[key] = asset['threshold']
-                    name = asset.get('name')
-                    if name:
-                        self.name_cache.setdefault(self._name_key(symbol, market), name)
+        for asset_type, assets in MONITOR_CONFIG.items():
+            for asset in assets:
+                symbol = asset['symbol']
+                market = asset.get('market', '')
+                frequency = asset['frequency']
+                key = self._get_cache_key(symbol, market, frequency)
+                self.threshold_cache[key] = asset['threshold']
+                name = asset.get('name')
+                if name:
+                    self.name_cache.setdefault(self._name_key(symbol, market), name)
 
     def _get_cache_key(self, symbol: str, market: str, frequency: str) -> str:
         return f"{symbol}_{market}_{frequency}"
