@@ -154,6 +154,11 @@ PRODUCER_SCHEDULE = {
         'type': 'cron',
         'kwargs': {'hour': 9, 'minute': 31},
     },
+    # 公众号 AI 早报：每天 09:35
+    'morning_briefing': {
+        'type': 'cron',
+        'kwargs': {'hour': 9, 'minute': 35},
+    },
 }
 
 # 数据库配置

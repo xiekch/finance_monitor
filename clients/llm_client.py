@@ -12,6 +12,7 @@ class BriefingInput:
     posts: List[SocialPost]
     window_hours: int
     max_chars: int
+    extra_context: str = ""
 
 
 @dataclass
@@ -123,11 +124,14 @@ class TongyiLLMClient:
             f"[{p.author}] {p.created_at}\n{p.text}\n{p.url}"
             for p in ordered
         )
-        return self.prompt_template.format(
+        kwargs = dict(
             window_hours=payload.window_hours,
             max_chars=payload.max_chars,
             posts_block=posts_block,
         )
+        if payload.extra_context:
+            kwargs["market_block"] = payload.extra_context
+        return self.prompt_template.format(**kwargs)
 
 
 def build_default_llm_client() -> LLMClient:
@@ -141,6 +145,23 @@ def build_default_llm_client() -> LLMClient:
         max_tokens=llm_cfg["max_tokens"],
         temperature=llm_cfg.get("temperature", 0.3),
         prompt_template=SOCIAL_CONFIG["prompt_template"],
+        timeout_sec=llm_cfg["timeout_sec"],
+        enable_thinking=llm_cfg.get("enable_thinking"),
+    )
+
+
+def build_morning_llm_client() -> LLMClient:
+    import os
+    from config.social import SOCIAL_CONFIG
+    from config.morning_briefing import MORNING_BRIEFING_CONFIG
+    llm_cfg = SOCIAL_CONFIG["llm_provider"]
+    return TongyiLLMClient(
+        api_key=os.getenv(llm_cfg["api_key_env"], ""),
+        base_url=llm_cfg["base_url"],
+        model=llm_cfg["model"],
+        max_tokens=llm_cfg["max_tokens"],
+        temperature=llm_cfg.get("temperature", 0.3),
+        prompt_template=MORNING_BRIEFING_CONFIG["prompt_template"],
         timeout_sec=llm_cfg["timeout_sec"],
         enable_thinking=llm_cfg.get("enable_thinking"),
     )

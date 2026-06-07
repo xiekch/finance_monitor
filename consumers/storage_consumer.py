@@ -63,6 +63,7 @@ class StorageConsumer(BaseConsumer):
             output_tokens=(p.get("stats") or {}).get("output_tokens", 0),
             degraded=bool(p.get("degraded", False)),
             error=p.get("error"),
+            source=message.source or "",
         )
         bid = self.social_store.save_briefing(briefing)
         logging.info(

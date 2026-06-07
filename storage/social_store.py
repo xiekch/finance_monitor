@@ -10,7 +10,7 @@ from config.settings import DATABASE_CONFIG
 from models.social import SocialPost, Briefing
 
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 _MIGRATIONS = {
     1: [
@@ -43,6 +43,7 @@ _MIGRATIONS = {
     ],
     2: [
         "ALTER TABLE social_posts RENAME TO _social_posts_old",
+
         """CREATE TABLE social_posts (
                platform       TEXT NOT NULL DEFAULT 'x',
                post_id        TEXT NOT NULL,
@@ -66,6 +67,9 @@ _MIGRATIONS = {
         "DROP INDEX IF EXISTS idx_social_posts_author_created",
         """CREATE INDEX IF NOT EXISTS idx_social_posts_platform_author_created
                ON social_posts(platform, author, created_at DESC)""",
+    ],
+    3: [
+        "ALTER TABLE briefings ADD COLUMN source TEXT NOT NULL DEFAULT ''",
     ],
 }
 
@@ -170,20 +174,56 @@ class SocialPostStore:
             row = cur.fetchone()
             return row[0] if row else None
 
+    def get_posts_since(
+        self, since: datetime, platform: Optional[str] = None,
+    ) -> List[SocialPost]:
+        """返回 created_at >= since 的帖子，按 created_at 正序。"""
+        since_iso = since.isoformat()
+        with self._lock, self._conn() as conn:
+            cur = conn.cursor()
+            if platform:
+                cur.execute(
+                    """SELECT platform, post_id, author, author_name, text,
+                              created_at, url, is_retweet, referenced_url
+                       FROM social_posts
+                       WHERE platform = ? AND created_at >= ?
+                       ORDER BY created_at ASC""",
+                    (platform, since_iso),
+                )
+            else:
+                cur.execute(
+                    """SELECT platform, post_id, author, author_name, text,
+                              created_at, url, is_retweet, referenced_url
+                       FROM social_posts
+                       WHERE created_at >= ?
+                       ORDER BY created_at ASC""",
+                    (since_iso,),
+                )
+            return [
+                SocialPost(
+                    platform=r[0], post_id=r[1], author=r[2],
+                    author_name=r[3], text=r[4], created_at=r[5],
+                    url=r[6], is_retweet=bool(r[7]),
+                    referenced_url=r[8],
+                )
+                for r in cur.fetchall()
+            ]
+
     def save_briefing(self, briefing: Briefing) -> int:
         with self._lock, self._conn() as conn:
             cur = conn.cursor()
             cur.execute("""
                 INSERT INTO briefings
                 (created_at, window_hours, source_post_ids, markdown, sections_json,
-                 model, input_tokens, output_tokens, degraded, error)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 model, input_tokens, output_tokens, degraded, error, source)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 briefing.created_at, briefing.window_hours,
                 json.dumps(briefing.source_post_ids), briefing.markdown,
                 briefing.sections_json, briefing.model,
                 briefing.input_tokens, briefing.output_tokens,
                 1 if briefing.degraded else 0, briefing.error,
+                briefing.source,
             ))
             conn.commit()
             return cur.lastrowid

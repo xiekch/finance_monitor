@@ -36,3 +36,4 @@ class Briefing:
     output_tokens: int
     degraded: bool
     error: Optional[str]
+    source: str = ""         # 来源 producer/consumer 名称，区分 x_briefing vs morning_briefing
