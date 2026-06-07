@@ -3,6 +3,7 @@ akshare
 apscheduler
 langchain-core
 langchain-openai
+markdown
 pandas
 python-dotenv
 pytz

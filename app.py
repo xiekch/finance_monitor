@@ -23,6 +23,7 @@ from steps.storage import StorageStep
 from steps.volatility import VolatilityStep
 from steps.ai_briefing import AIBriefingStep
 from steps.notify import NotifyStep
+from steps.publish_mp import PublishMPStep
 
 from config.schedule import TASK_SCHEDULE
 from config.settings import WECOM_CONFIG
@@ -58,7 +59,7 @@ TASK_REGISTRY: dict[str, callable] = {
     "x_briefing":       lambda: FetchXPosts() | StorageStep() | AIBriefingStep() | Fork(StorageStep(), NotifyStep()),
     "weibo_briefing":   lambda: FetchWeiboPosts() | StorageStep() | AIBriefingStep() | Fork(StorageStep(), NotifyStep()),
     "market_briefing":  lambda: FetchMarketBriefing() | NotifyStep(),
-    "morning_briefing": lambda: FetchMorningBriefing() | Fork(StorageStep(), NotifyStep()),
+    "morning_briefing": lambda: FetchMorningBriefing() | Fork(StorageStep(), NotifyStep(), PublishMPStep()),
 }
 
 TASK_KEYS: list[str] = list(TASK_REGISTRY)

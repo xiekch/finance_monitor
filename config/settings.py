@@ -41,6 +41,12 @@ DATABASE_CONFIG = {
     'backup_interval_hours': 24
 }
 
+WECHAT_MP_CONFIG = {
+    'app_id': os.getenv('WECHAT_MP_APP_ID', ''),
+    'app_secret': os.getenv('WECHAT_MP_APP_SECRET', ''),
+    'thumb_media_id': os.getenv('WECHAT_MP_THUMB_MEDIA_ID', ''),
+}
+
 REDIS_CONFIG = {
     'host': os.getenv('REDIS_HOST', 'localhost'),
     'port': int(os.getenv('REDIS_PORT', 6379)),
