@@ -283,7 +283,6 @@ _CLIENT_CLASSES = {
 
 
 def build_default_social_client() -> SocialClient:
-    import os
     from config.social import SOCIAL_CONFIG
     cfg = SOCIAL_CONFIG["social_provider"]
     name = cfg["name"]
@@ -294,7 +293,7 @@ def build_default_social_client() -> SocialClient:
             f"未知 social_provider.name: {name!r}; 可选: {sorted(_CLIENT_CLASSES)}"
         ) from e
     kwargs = dict(
-        api_key=os.getenv(cfg["api_key_env"], ""),
+        api_key=cfg["api_key"],
         base_url=cfg["base_url"],
         timeout_sec=cfg["timeout_sec"],
     )

@@ -166,11 +166,10 @@ def _compose_weibo_text(s: dict) -> tuple[str, bool, Optional[str]]:
 
 
 def build_default_weibo_client() -> WeiboClient:
-    import os
     from config.social import SOCIAL_CONFIG
     cfg = SOCIAL_CONFIG["weibo_provider"]
     return WeiboClient(
-        access_token=os.getenv(cfg["api_key_env"], ""),
+        access_token=cfg["api_key"],
         base_url=cfg["base_url"],
         timeout_sec=cfg["timeout_sec"],
     )

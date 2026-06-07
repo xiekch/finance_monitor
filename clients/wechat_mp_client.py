@@ -4,7 +4,7 @@ from typing import Optional
 
 import requests
 
-from config.settings import WECHAT_MP_CONFIG
+from config.morning_briefing import WECHAT_MP_CONFIG
 
 BASE_URL = "https://api.weixin.qq.com"
 

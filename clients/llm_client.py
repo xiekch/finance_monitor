@@ -135,11 +135,10 @@ class TongyiLLMClient:
 
 
 def build_default_llm_client() -> LLMClient:
-    import os
     from config.social import SOCIAL_CONFIG
     llm_cfg = SOCIAL_CONFIG["llm_provider"]
     return TongyiLLMClient(
-        api_key=os.getenv(llm_cfg["api_key_env"], ""),
+        api_key=llm_cfg["api_key"],
         base_url=llm_cfg["base_url"],
         model=llm_cfg["model"],
         max_tokens=llm_cfg["max_tokens"],
@@ -151,12 +150,11 @@ def build_default_llm_client() -> LLMClient:
 
 
 def build_morning_llm_client() -> LLMClient:
-    import os
     from config.social import SOCIAL_CONFIG
     from config.morning_briefing import MORNING_BRIEFING_CONFIG
     llm_cfg = SOCIAL_CONFIG["llm_provider"]
     return TongyiLLMClient(
-        api_key=os.getenv(llm_cfg["api_key_env"], ""),
+        api_key=llm_cfg["api_key"],
         base_url=llm_cfg["base_url"],
         model=llm_cfg["model"],
         max_tokens=llm_cfg["max_tokens"],

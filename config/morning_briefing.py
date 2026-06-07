@@ -1,5 +1,16 @@
 """公众号 AI 早报配置。与 social.py 的 X 简报完全独立。"""
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+WECHAT_MP_CONFIG = {
+    'app_id': os.getenv('WECHAT_MP_APP_ID', ''),
+    'app_secret': os.getenv('WECHAT_MP_APP_SECRET', ''),
+    'thumb_media_id': os.getenv('WECHAT_MP_THUMB_MEDIA_ID', ''),
+}
+
 MORNING_BRIEFING_CONFIG = {
     "cron_hour": 9,
     "cron_minute": 35,
