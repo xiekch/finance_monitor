@@ -9,7 +9,8 @@ from storage.market_db import MarketDataDB
 from fetchers.us_stock_yf_fetcher import USStockYfFetcher
 from fetchers.crypto_fetcher import CryptoFetcher
 from fetchers.futures_fetcher import FuturesFetcher
-from config.settings import API_CONFIG, MONITOR_CONFIG
+from config.settings import API_CONFIG
+from config.monitor import MONITOR_CONFIG
 
 
 _GROUPS: List[Tuple[str, Tuple[str, ...]]] = [

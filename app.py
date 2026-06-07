@@ -9,7 +9,8 @@ from apscheduler.triggers.base import BaseTrigger
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from steps.base import Step, Task, TaskRunner, Fork, FetchMultiSource
+
+from steps.base import Task, TaskRunner, Fork
 from steps.fetch_astock import FetchAStock
 from steps.fetch_usstock import FetchUSStock
 from steps.fetch_crypto import FetchCrypto
@@ -23,8 +24,9 @@ from steps.volatility import VolatilityStep
 from steps.ai_briefing import AIBriefingStep
 from steps.notify import NotifyStep
 
-from config.settings import PRODUCER_SCHEDULE, MQ_BACKEND, WECOM_CONFIG
-from config.social import SOCIAL_CONFIG, assert_social_env_ready
+from config.schedule import TASK_SCHEDULE
+from config.settings import WECOM_CONFIG
+from config.social import assert_social_env_ready
 
 
 _TRIGGER_TYPES = {
@@ -45,102 +47,21 @@ def build_trigger(spec: Optional[dict]) -> Optional[BaseTrigger]:
     return trigger_cls(**spec.get("kwargs", {}))
 
 
-def _social_trigger() -> CronTrigger:
-    return CronTrigger(
-        hour=SOCIAL_CONFIG["cron_hours"],
-        minute=SOCIAL_CONFIG.get("cron_minute", 0),
-    )
+# ── Task 注册表 ──────────────────────────────────────────────
+# key → (chain 工厂, trigger 工厂)；trigger 为 None 则从 TASK_SCHEDULE 查
+_PRICE_FETCH = {"astock": FetchAStock, "usstock": FetchUSStock, "crypto": FetchCrypto, "futures": FetchFutures}
 
+# key → chain 工厂；trigger 统一从 TASK_SCHEDULE 查
+TASK_REGISTRY: dict[str, callable] = {
+    **{f"{m}_{f}": (lambda m=m, f=f: _PRICE_FETCH[m](f) | StorageStep() | VolatilityStep() | NotifyStep())
+       for m in _PRICE_FETCH for f in ("minute", "daily", "weekly")},
+    "x_briefing":       lambda: FetchXPosts() | StorageStep() | AIBriefingStep() | Fork(StorageStep(), NotifyStep()),
+    "weibo_briefing":   lambda: FetchWeiboPosts() | StorageStep() | AIBriefingStep() | Fork(StorageStep(), NotifyStep()),
+    "market_briefing":  lambda: FetchMarketBriefing() | NotifyStep(),
+    "morning_briefing": lambda: FetchMorningBriefing() | Fork(StorageStep(), NotifyStep()),
+}
 
-def _build_price_task(
-    market: str,
-    frequency: str,
-    run_immediately: bool,
-    ignore_schedule: bool,
-) -> Task:
-    fetch_cls = {
-        "astock": FetchAStock,
-        "usstock": FetchUSStock,
-        "crypto": FetchCrypto,
-        "futures": FetchFutures,
-    }[market]
-
-    name = f"{market}_{frequency}"
-    chain = fetch_cls(frequency) | StorageStep() | VolatilityStep() | NotifyStep()
-    trigger = build_trigger(PRODUCER_SCHEDULE.get(name))
-
-    return Task(
-        name=name,
-        chain=chain,
-        trigger=trigger,
-        run_immediately=run_immediately,
-        ignore_schedule=ignore_schedule,
-    )
-
-
-def _build_social_briefing_task(
-    fetchers: list[Step],
-    run_immediately: bool,
-    ignore_schedule: bool,
-) -> Task:
-    chain = (
-        FetchMultiSource(*fetchers)
-        | StorageStep()
-        | AIBriefingStep()
-        | Fork(StorageStep(), NotifyStep())
-    )
-    trigger = None if ignore_schedule else _social_trigger()
-
-    return Task(
-        name="social_briefing",
-        chain=chain,
-        trigger=trigger,
-        run_immediately=run_immediately,
-        ignore_schedule=ignore_schedule,
-    )
-
-
-def _build_market_briefing_task(
-    run_immediately: bool,
-    ignore_schedule: bool,
-) -> Task:
-    chain = FetchMarketBriefing() | NotifyStep()
-    trigger = build_trigger(PRODUCER_SCHEDULE.get("market_briefing"))
-
-    return Task(
-        name="market_briefing",
-        chain=chain,
-        trigger=trigger,
-        run_immediately=run_immediately,
-        ignore_schedule=ignore_schedule,
-    )
-
-
-def _build_morning_briefing_task(
-    run_immediately: bool,
-    ignore_schedule: bool,
-) -> Task:
-    chain = FetchMorningBriefing() | Fork(StorageStep(), NotifyStep())
-    trigger = build_trigger(PRODUCER_SCHEDULE.get("morning_briefing"))
-
-    return Task(
-        name="morning_briefing",
-        chain=chain,
-        trigger=trigger,
-        run_immediately=run_immediately,
-        ignore_schedule=ignore_schedule,
-    )
-
-
-# 所有可用的 task key；x_briefing / weibo_briefing 在构建时合并为 social_briefing
-TASK_KEYS: list[str] = [
-    "astock_minute", "astock_daily", "astock_weekly",
-    "usstock_minute", "usstock_daily", "usstock_weekly",
-    "crypto_minute", "crypto_daily", "crypto_weekly",
-    "futures_minute", "futures_daily", "futures_weekly",
-    "x_briefing", "weibo_briefing",
-    "market_briefing", "morning_briefing",
-]
+TASK_KEYS: list[str] = list(TASK_REGISTRY)
 
 DEFAULT_TASKS: list[str] = [
     "usstock_daily", "crypto_daily", "x_briefing", "market_briefing", "morning_briefing",
@@ -153,32 +74,16 @@ def build_tasks(
     ignore_schedule: bool = False,
 ) -> list[Task]:
     tasks: list[Task] = []
-
-    # 价格类 task：market_frequency 形式
-    price_markets = {"astock", "usstock", "crypto", "futures"}
     for key in task_keys:
-        parts = key.rsplit("_", 1)
-        if len(parts) == 2 and parts[0] in price_markets:
-            market, freq = parts
-            tasks.append(_build_price_task(market, freq, run_immediately, ignore_schedule))
-
-    # 社交简报：x_briefing / weibo_briefing 合并
-    social_fetchers: list[Step] = []
-    if "x_briefing" in task_keys:
-        social_fetchers.append(FetchXPosts())
-    if "weibo_briefing" in task_keys:
-        social_fetchers.append(FetchWeiboPosts())
-    if social_fetchers:
-        tasks.append(_build_social_briefing_task(social_fetchers, run_immediately, ignore_schedule))
-
-    # 行情早报
-    if "market_briefing" in task_keys:
-        tasks.append(_build_market_briefing_task(run_immediately, ignore_schedule))
-
-    # 公众号 AI 早报
-    if "morning_briefing" in task_keys:
-        tasks.append(_build_morning_briefing_task(run_immediately, ignore_schedule))
-
+        if key not in TASK_REGISTRY:
+            continue
+        tasks.append(Task(
+            name=key,
+            chain=TASK_REGISTRY[key](),
+            trigger=build_trigger(TASK_SCHEDULE.get(key)),
+            run_immediately=run_immediately,
+            ignore_schedule=ignore_schedule,
+        ))
     return tasks
 
 

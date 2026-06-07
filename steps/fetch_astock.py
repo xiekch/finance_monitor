@@ -5,7 +5,8 @@ from typing import Any, List
 from steps.base import Step
 from models.messages import PriceDataMessage, MessageType
 from fetchers.stock_fetcher import StockFetcher
-from config.settings import API_CONFIG, MONITOR_CONFIG
+from config.settings import API_CONFIG
+from config.monitor import MONITOR_CONFIG
 
 
 _A_STOCK_MARKETS = ('SH', 'SZ')

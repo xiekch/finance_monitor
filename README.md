@@ -24,8 +24,8 @@ Task = Step | Step | Step | ...
 │  astock_daily:                                               │
 │    FetchAStock | StorageStep | VolatilityStep | NotifyStep   │
 │                                                              │
-│  social_briefing:                                            │
-│    FetchMultiSource(X, Weibo) | StorageStep | AIBriefingStep │
+│  x_briefing:                                                 │
+│    FetchXPosts | StorageStep | AIBriefingStep                │
 │      | Fork(StorageStep, NotifyStep)                         │
 │                                                              │
 │  market_briefing:                                            │
@@ -42,8 +42,8 @@ Task = Step | Step | Step | ...
 
 ```
 .
-├── app.py                  # 应用入口 / Task 定义 / CLI
-├── config/                 # settings.py（监控/调度）、social.py（X+LLM）
+├── app.py                  # 应用入口 / Task 注册表 / CLI
+├── config/                 # settings.py（API/DB）、schedule.py（调度）、monitor.py（标的）、social.py（X+LLM）
 ├── models/                 # messages、market、social 数据类
 ├── steps/                  # 管道步骤
 │   ├── base.py             # Step / Chain / Fork / FetchMultiSource / Task / TaskRunner
@@ -81,11 +81,12 @@ REDIS_DB=0
 REDIS_PASSWORD=
 ```
 
-监控标的、阈值、调度时间在 `config/settings.py` 中调整：
+配置文件按职责拆分：
 
-- `MONITOR_CONFIG`：按 `minute / daily / weekly` × `stocks / crypto / futures` 配置
-- `PRODUCER_SCHEDULE`：按 task key 配置 APScheduler 触发器；形如 `{"type": "cron", "kwargs": {...}}`，`None` 表示无调度
-- `PROXY` / `PROXY_URL`：海外行情抓取的本地代理（默认 `http://127.0.0.1:7897`）
+- `config/monitor.py` — `MONITOR_CONFIG`：按 `minute / daily / weekly` × `stocks / crypto / futures` 配置监控标的与阈值
+- `config/schedule.py` — `TASK_SCHEDULE`：按 task key 配置 APScheduler 触发器；形如 `{"type": "cron", "kwargs": {...}}`
+- `config/settings.py` — API 密钥、企微 webhook、数据库、代理等基础设施配置
+- `config/social.py` — X / 微博抓取 + LLM 简报相关配置
 
 ## 运行
 
@@ -136,10 +137,10 @@ python3 -m venv .venv
 ### 启动
 
 ```bash
-# 单独跑（每天按 SOCIAL_CONFIG["cron_hours"] 触发）
+# 单独跑（调度时间见 config/schedule.py）
 python app.py -t x_briefing
 
-# X + 微博混合简报
+# X 简报 + 微博简报（独立 task）
 python app.py -t x_briefing,weibo_briefing
 
 # 与行情 task 一起跑
@@ -162,7 +163,7 @@ TWITTERAPI_IO_KEY=...            # twitterapi.io 的 key（默认 X 数据源；
 主要字段：
 
 - `whitelist`：关注的 X 账号列表（不带 `@`）
-- `cron_hours`：简报时段，例 `"8,20"` 表示每天 8 点和 20 点各一次
+- `cron_hours`：简报时段（仅供参考，实际调度由 `config/schedule.py:TASK_SCHEDULE` 控制）
 - `window_hours`：每次简报覆盖的回看窗口（仅作为 LLM prompt 上下文，不影响 since_id 增量）
 - `prompt_template` / `user_prompt_extra`：LLM prompt，可调
 - `social_provider`：第三方 X 聚合服务，默认 `twitterapi_io`；可切 `socialdata`
@@ -186,5 +187,5 @@ TWITTERAPI_IO_KEY=...            # twitterapi.io 的 key（默认 X 数据源；
 - **新增数据链路**：
   1. 在 `steps/` 下实现新的 Step（继承 `Step`，实现 `async process(data)`）
   2. 在 `app.py` 中用 `|` 语法组合成 Task 并注册
-  3. 在 `config/settings.py:PRODUCER_SCHEDULE` 加该 task key 的触发器配置
+  3. 在 `config/schedule.py:TASK_SCHEDULE` 加该 task key 的触发器配置
 - **新增数据源**：继承 `fetchers/base_fetcher.py:BaseFetcher`

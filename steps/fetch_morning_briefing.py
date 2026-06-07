@@ -11,7 +11,8 @@ from fetchers.us_stock_yf_fetcher import USStockYfFetcher
 from fetchers.crypto_fetcher import CryptoFetcher
 from fetchers.futures_fetcher import FuturesFetcher
 from clients.llm_client import BriefingInput, build_morning_llm_client
-from config.settings import API_CONFIG, MONITOR_CONFIG
+from config.settings import API_CONFIG
+from config.monitor import MONITOR_CONFIG
 from config.morning_briefing import MORNING_BRIEFING_CONFIG
 
 

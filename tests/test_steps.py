@@ -178,19 +178,18 @@ class TestAppIntegration:
         step_names = [s.__class__.__name__ for s in tasks[0].chain.steps]
         assert step_names == ["FetchAStock", "StorageStep", "VolatilityStep", "NotifyStep"]
 
-    def test_build_tasks_social_merged(self):
+    def test_build_tasks_social_independent(self):
         from app import build_tasks
         tasks = build_tasks(["x_briefing", "weibo_briefing"], run_immediately=False, ignore_schedule=True)
-        names = [t.name for t in tasks]
-        assert "social_briefing" in names
-        assert len(tasks) == 1
+        names = sorted(t.name for t in tasks)
+        assert names == ["weibo_briefing", "x_briefing"]
 
     def test_build_tasks_all_types(self):
         from app import build_tasks
         keys = ["crypto_daily", "x_briefing", "market_briefing", "morning_briefing"]
         tasks = build_tasks(keys, run_immediately=False, ignore_schedule=True)
         names = sorted(t.name for t in tasks)
-        assert names == ["crypto_daily", "market_briefing", "morning_briefing", "social_briefing"]
+        assert names == ["crypto_daily", "market_briefing", "morning_briefing", "x_briefing"]
 
     def test_parse_args_default(self):
         from app import parse_args, DEFAULT_TASKS

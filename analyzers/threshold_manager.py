@@ -1,5 +1,5 @@
 from typing import Dict, Any, Optional
-from config.settings import MONITOR_CONFIG
+from config.monitor import MONITOR_CONFIG
 
 class ThresholdManager:
     """阈值管理器（顺便托管 symbol -> 中文名 的查询）"""
