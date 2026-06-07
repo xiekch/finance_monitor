@@ -1,47 +1,60 @@
 # Finance Monitor
 
-基于生产者-消费者模式的多市场行情波动监控系统。按配置的阈值实时／日级／周级监控股票、加密货币、期货等标的，触发波动时通过企业微信推送告警。
+基于 Task 管道编排的多市场行情波动监控系统。按配置的阈值实时／日级／周级监控股票、加密货币、期货等标的，触发波动时通过企业微信推送告警。
 
 ## 功能特性
 
 - **多市场覆盖**：A 股、美股、加密货币、期货
 - **多频率监控**：分钟级（1m / 5m）、日级、周级
-- **生产者-消费者解耦**：Producer 抓数据 → Redis Pub/Sub → 多个 Consumer 并行处理
+- **管道式编排**：用 `|` 语法声明完整数据链路（Fetch → Storage → Analyze → Notify），一处定义、一目了然
 - **可插拔阈值**：每个标的、每个频率独立配置波动阈值
 - **数据持久化**：SQLite 存储历史行情，联合唯一索引防重
 - **调度灵活**：基于 APScheduler，支持立即执行 / 仅执行一次 / 按 cron 调度
 - **企业微信告警**：波动超阈值自动推送 Webhook 消息
+- **AI 简报**：X / 微博推文 + 行情数据经 LLM 聚合生成 markdown 简报
 
 ## 架构
 
 ```
-┌─────────────┐    publish     ┌──────────┐   subscribe   ┌──────────────────────┐
-│  Producers  │ ─────────────► │  Redis   │ ────────────► │  Consumers           │
-│             │                │  Pub/Sub │               │                      │
-│ - AStock    │                └──────────┘               │ - StorageConsumer    │
-│ - USStock   │                                           │ - VolatilityConsumer │
-│   (min/d/w) │                                           │ - NotificationConsumer│
-│ - Crypto    │                                           │     │                │
-└─────────────┘                                           │     ▼                │
-                                                          │  WeCom Webhook       │
-                                                          └──────────────────────┘
+Task = Step | Step | Step | ...
+
+┌──────────────────────────────────────────────────────────────┐
+│ TaskRunner（共享 BackgroundScheduler）                        │
+│                                                              │
+│  astock_daily:                                               │
+│    FetchAStock | StorageStep | VolatilityStep | NotifyStep   │
+│                                                              │
+│  social_briefing:                                            │
+│    FetchMultiSource(X, Weibo) | StorageStep | AIBriefingStep │
+│      | Fork(StorageStep, NotifyStep)                         │
+│                                                              │
+│  market_briefing:                                            │
+│    FetchMarketBriefing | NotifyStep                          │
+│                                                              │
+│  morning_briefing:                                           │
+│    FetchMorningBriefing | Fork(StorageStep, NotifyStep)      │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-- 消息类型：`PRICE_DATA` / `HISTORICAL_PRICE_DATA` / `VOLATILITY_ALERT` / `SYSTEM_EVENT`
-- 每个 Consumer 为其关心的每种消息类型起一个独立订阅线程
+每个 Step 的输出是下一个 Step 的输入；返回 `None` 则链路终止。`Fork` 将同一份数据发给多个分支并行处理。
 
 ## 目录结构
 
 ```
 .
-├── app.py                  # 应用入口 / PRODUCER_REGISTRY / trigger 注入
+├── app.py                  # 应用入口 / Task 定义 / CLI
 ├── config/                 # settings.py（监控/调度）、social.py（X+LLM）
 ├── models/                 # messages、market、social 数据类
-├── infra/                  # message_queue（Redis pub/sub）、trading_hours
+├── steps/                  # 管道步骤
+│   ├── base.py             # Step / Chain / Fork / FetchMultiSource / Task / TaskRunner
+│   ├── fetch_*.py          # 数据获取步骤（8 个）
+│   ├── storage.py          # 透传存储步骤
+│   ├── volatility.py       # 波动分析步骤
+│   ├── ai_briefing.py      # AI 简报生成步骤
+│   └── notify.py           # 推送通知步骤（终端）
+├── infra/                  # trading_hours
 ├── clients/                # llm_client、social_client（外部 API 封装）
 ├── storage/                # market_db、social_store（SQLite 持久化）
-├── producers/              # 各市场各频率的生产者
-├── consumers/              # 存储 / 分析 / 通知 / AI 简报 消费者
 ├── fetchers/               # 数据抓取（yfinance / binance / 股票接口）
 ├── analyzers/              # 波动率分析、threshold_manager
 └── notifiers/              # 企业微信通知
@@ -50,8 +63,7 @@
 ## 环境要求
 
 - Python 3.9+
-- Redis（**可选**）：默认消息总线是进程内 in-memory backend，无需 Redis。如需切回 Redis，把 `config/settings.py` 里的 `MQ_BACKEND` 改成 `'redis'`，`app.py` 会通过 `redis-server --daemonize yes` 启动本机 Redis（此时需要本机已安装 `redis-server`）
-- 依赖：`redis`、`apscheduler`、`yfinance`、`requests`、`pandas`、`python-dotenv` 等
+- 依赖：`apscheduler`、`yfinance`、`requests`、`pandas`、`python-dotenv` 等
 
 ## 配置
 
@@ -72,9 +84,8 @@ REDIS_PASSWORD=
 监控标的、阈值、调度时间在 `config/settings.py` 中调整：
 
 - `MONITOR_CONFIG`：按 `minute / daily / weekly` × `stocks / crypto / futures` 配置
-- `PRODUCER_SCHEDULE`：按 producer key 配置 APScheduler 触发器；形如 `{"type": "cron", "kwargs": {...}}`，`None` 表示无调度。运行频次与 producer 类解耦，改时间不用动代码。
+- `PRODUCER_SCHEDULE`：按 task key 配置 APScheduler 触发器；形如 `{"type": "cron", "kwargs": {...}}`，`None` 表示无调度
 - `PROXY` / `PROXY_URL`：海外行情抓取的本地代理（默认 `http://127.0.0.1:7897`）
-- `MQ_BACKEND`：消息总线 backend，`'memory'`（默认，进程内）或 `'redis'`（跨进程）
 
 ## 运行
 
@@ -94,42 +105,48 @@ python3 -m venv .venv
 ### 启动
 
 ```bash
-# 正常调度模式：常驻运行，按 cron 触发（默认 producer：usstock_daily + crypto_daily）
+# 正常调度模式：常驻运行，按 cron 触发（默认 task：usstock_daily + crypto_daily + x_briefing + market_briefing + morning_briefing）
 .venv/bin/python3 app.py
 
 # 启动时不立即执行一次
 .venv/bin/python3 app.py --no-immediate
 
-# 只执行一次后自动退出
+# 只执行一次后保持运行等待处理完成
 .venv/bin/python3 app.py --once
 
-# 只启动指定 producer（逗号分隔）
-.venv/bin/python3 app.py --producers usstock_minute,crypto_minute
+# 只启动指定 task（逗号分隔）
+.venv/bin/python3 app.py -t usstock_minute,crypto_minute
+
+# 也支持旧的 -p / --producers 别名
+.venv/bin/python3 app.py -p usstock_daily,crypto_daily
 
 # 指定企微推送 webhook（可多次指定，覆盖 .env 中的 WECOM_WEBHOOK_URL）
 .venv/bin/python3 app.py --webhook "https://...?key=aaa" --webhook "https://...?key=bbb"
 
-# 列出所有可选 producer 后退出
-.venv/bin/python3 app.py --list-producers
+# 列出所有可选 task 后退出
+.venv/bin/python3 app.py --list-tasks
 ```
 
 日志写入 `app.log` 并同时打印到控制台。
 
 ## X 推文 AI 简报
 
-并行链路：每天按 cron 从配置的 X 账号白名单拉取增量推文 → 调 LLM 聚合成 markdown 简报 → 通过现有企微 webhook 推送；原始推文与简报均落 SQLite。
+每天按 cron 从配置的 X 账号白名单拉取增量推文 → 调 LLM 聚合成 markdown 简报 → 通过企微 webhook 推送；原始推文与简报均落 SQLite。
 
 ### 启动
 
 ```bash
 # 单独跑（每天按 SOCIAL_CONFIG["cron_hours"] 触发）
-python app.py --producers x_briefing
+python app.py -t x_briefing
 
-# 与行情 producer 一起跑
-python app.py --producers crypto_daily,usstock_daily,x_briefing
+# X + 微博混合简报
+python app.py -t x_briefing,weibo_briefing
 
-# 立即跑一次（联调用；since_id 已更新后再跑会拉到 0 条 → 不重复推送）
-python app.py --producers x_briefing --once
+# 与行情 task 一起跑
+python app.py -t crypto_daily,usstock_daily,x_briefing
+
+# 立即跑一次
+python app.py -t x_briefing --once
 ```
 
 ### 环境变量（追加到 `.env`）
@@ -144,13 +161,12 @@ TWITTERAPI_IO_KEY=...            # twitterapi.io 的 key（默认 X 数据源；
 
 主要字段：
 
-- `enabled`：总开关。`False` 时 `XBriefingProducer` / `AIBriefingConsumer` 都不实例化
 - `whitelist`：关注的 X 账号列表（不带 `@`）
 - `cron_hours`：简报时段，例 `"8,20"` 表示每天 8 点和 20 点各一次
 - `window_hours`：每次简报覆盖的回看窗口（仅作为 LLM prompt 上下文，不影响 since_id 增量）
 - `prompt_template` / `user_prompt_extra`：LLM prompt，可调
-- `social_provider`：第三方 X 聚合服务，默认 `twitterapi_io`；可切 `socialdata`，client 在 [clients/social_client.py](clients/social_client.py) 按 `name` 派发
-- `llm_provider`：LLM，默认 `tongyi`（DashScope via OpenAI 兼容协议 + `langchain_openai.ChatOpenAI`），`model` 默认 `qwen3.6-plus`，`max_tokens` 8192（qwen3 thinking 模型需要预留 thinking token 配额）
+- `social_provider`：第三方 X 聚合服务，默认 `twitterapi_io`；可切 `socialdata`
+- `llm_provider`：LLM，默认 `tongyi`（DashScope via OpenAI 兼容协议 + `langchain_openai.ChatOpenAI`）
 - `push_max_chars`：推送给企微的字符上限（4096 字节内安全冗余）
 
 ### 数据落地（共用 `market_data.db`）
@@ -167,9 +183,8 @@ TWITTERAPI_IO_KEY=...            # twitterapi.io 的 key（默认 X 数据源；
 
 ## 扩展
 
-- **新增生产者**：
-  1. 继承 `producers/base_producer.py:BaseProducer`，只需实现 `produce_data()`；触发器由外部注入，不要在类里写 cron。
-  2. 在 `app.py:PRODUCER_REGISTRY` 加一条 `"key": (YourProducer, {extra_kwargs})`。
-  3. 在 `config/settings.py:PRODUCER_SCHEDULE` 加该 key 的触发器配置（或 `None` 表示无调度）。
-- **新增消费者**：继承 `consumers/base_consumer.py:BaseConsumer`，声明关心的 `MessageType` 并实现 `process_message()`。
-- **新增数据源**：继承 `fetchers/base_fetcher.py:BaseFetcher`。
+- **新增数据链路**：
+  1. 在 `steps/` 下实现新的 Step（继承 `Step`，实现 `async process(data)`）
+  2. 在 `app.py` 中用 `|` 语法组合成 Task 并注册
+  3. 在 `config/settings.py:PRODUCER_SCHEDULE` 加该 task key 的触发器配置
+- **新增数据源**：继承 `fetchers/base_fetcher.py:BaseFetcher`

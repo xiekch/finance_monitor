@@ -1,11 +1,9 @@
 import logging
 from datetime import datetime, timedelta
-from typing import Sequence, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
-from apscheduler.triggers.base import BaseTrigger
-
-from producers.base_producer import BaseProducer
-from models.messages import BaseMessage, MarketBriefingMessage
+from steps.base import Step
+from models.messages import MarketBriefingMessage
 from models.market import PriceData
 from storage.market_db import MarketDataDB
 from fetchers.us_stock_yf_fetcher import USStockYfFetcher
@@ -14,7 +12,6 @@ from fetchers.futures_fetcher import FuturesFetcher
 from config.settings import API_CONFIG, MONITOR_CONFIG
 
 
-# 行情早报里展示用的市场分组与顺序。未列出的 market 走 "其他"。
 _GROUPS: List[Tuple[str, Tuple[str, ...]]] = [
     ("A 股", ("SH", "SZ")),
     ("港股", ("HK",)),
@@ -26,35 +23,20 @@ _GROUPS: List[Tuple[str, Tuple[str, ...]]] = [
 _US_MARKETS = ("US", "NASDAQ", "NYSE")
 
 
-class MarketBriefingProducer(BaseProducer):
-    """每日早报 producer：三频去重合集 → 最近两条 daily K → markdown 推送。
+class FetchMarketBriefing(Step):
 
-    数据策略：DB 优先，缺数据时回落 yfinance(美股)/Binance(crypto)/akshare(期货)；
-    其他市场（A 股/港股）无 fetcher fallback，缺数据则标记 "暂无"。
-    """
-
-    def __init__(
-        self,
-        trigger: Optional[BaseTrigger] = None,
-        run_immediately: bool = False,
-        ignore_schedule: bool = False,
-    ):
-        super().__init__(
-            "MarketBriefingProducer",
-            trigger=trigger,
-            run_immediately=run_immediately,
-            ignore_schedule=ignore_schedule,
-        )
+    def __init__(self):
+        self.name = "FetchMarketBriefing"
         self.db = MarketDataDB()
         self.us_fetcher = USStockYfFetcher(API_CONFIG)
         self.crypto_fetcher = CryptoFetcher(API_CONFIG)
         self.futures_fetcher = FuturesFetcher(API_CONFIG)
 
-    async def produce_data(self) -> Sequence[BaseMessage]:
+    async def process(self, data: Any = None) -> MarketBriefingMessage | None:
         watchlist = self._collect_watchlist()
         if not watchlist:
-            logging.warning(f"[{self.producer_name}] watchlist 为空，跳过早报")
-            return []
+            logging.warning(f"[{self.name}] watchlist 为空，跳过早报")
+            return None
 
         rows: List[dict] = []
         for item in watchlist:
@@ -63,9 +45,7 @@ class MarketBriefingProducer(BaseProducer):
 
         markdown = self._format_markdown(rows)
         hit = sum(1 for r in rows if not r["missing"])
-        logging.info(
-            f"[{self.producer_name}] 早报组装完成: {hit}/{len(rows)} 命中数据"
-        )
+        logging.info(f"[{self.name}] 早报组装完成: {hit}/{len(rows)} 命中数据")
 
         payload = {
             "markdown": markdown,
@@ -73,10 +53,9 @@ class MarketBriefingProducer(BaseProducer):
             "row_count": len(rows),
             "hit_count": hit,
         }
-        return [MarketBriefingMessage(payload=payload, source=self.producer_name)]
+        return MarketBriefingMessage(payload=payload, source=self.name)
 
     def _collect_watchlist(self) -> List[dict]:
-        """合并所有 asset，按 (symbol, market) 去重。"""
         seen: dict = {}
         for asset_list in MONITOR_CONFIG.values():
             for asset in asset_list:
@@ -91,16 +70,9 @@ class MarketBriefingProducer(BaseProducer):
         return list(seen.values())
 
     async def _get_two_daily_closes(
-        self, item: dict
+        self, item: dict,
     ) -> Tuple[Optional[PriceData], Optional[PriceData]]:
-        """返回 (current, previous) 两条 daily K 线；不足两条则 (None, None)。
-
-        先查 MarketDataDB，命中即返回；否则按 market 选 fetcher 回落，并把
-        拉到的历史顺手写回 DB，下次直接命中。
-        """
-        symbol = item["symbol"]
-        market = item["market"]
-
+        symbol, market = item["symbol"], item["market"]
         end = datetime.now()
         start = end - timedelta(days=14)
         db_rows = self.db.get_historical_prices(
@@ -113,7 +85,7 @@ class MarketBriefingProducer(BaseProducer):
         fetched = await self._fetch_recent_daily(item)
         if not fetched or len(fetched) < 2:
             logging.warning(
-                f"[{self.producer_name}] {symbol}({market}) "
+                f"[{self.name}] {symbol}({market}) "
                 f"DB={len(db_rows)} fetch={len(fetched) if fetched else 0}，"
                 f"无法计算日涨跌"
             )
@@ -124,33 +96,26 @@ class MarketBriefingProducer(BaseProducer):
         return fetched[-1], fetched[-2]
 
     async def _fetch_recent_daily(self, item: dict) -> Optional[List[PriceData]]:
-        market = item["market"]
-        symbol = item["symbol"]
+        market, symbol = item["market"], item["symbol"]
         end = datetime.now()
         start = end - timedelta(days=10)
         try:
             if market in _US_MARKETS:
                 return await self.us_fetcher.fetch_historical_data(
-                    symbol=symbol, frequency="1d",
-                    start_date=start, end_date=end,
+                    symbol=symbol, frequency="1d", start_date=start, end_date=end,
                 )
             if market == "CRYPTO":
                 return await self.crypto_fetcher.fetch_historical_data(
-                    symbol=symbol, frequency="1d",
-                    start_date=start, end_date=end,
+                    symbol=symbol, frequency="1d", start_date=start, end_date=end,
                 )
             if market == "FUT":
                 return await self.futures_fetcher.fetch_historical_data(
                     symbol=symbol, frequency="1d", limit=7, market="FUT",
                 )
-            logging.info(
-                f"[{self.producer_name}] {symbol}({market}) 无 fetch fallback"
-            )
+            logging.info(f"[{self.name}] {symbol}({market}) 无 fetch fallback")
             return None
         except Exception as e:
-            logging.error(
-                f"[{self.producer_name}] {symbol}({market}) fetch fallback 异常: {e}"
-            )
+            logging.error(f"[{self.name}] {symbol}({market}) fetch fallback 异常: {e}")
             return None
 
     def _build_row(
@@ -199,13 +164,8 @@ class MarketBriefingProducer(BaseProducer):
 
     @staticmethod
     def _format_row(r: dict) -> str:
-        name = r["name"]
-        symbol = r["symbol"]
+        name, symbol = r["name"], r["symbol"]
         if r["missing"]:
             return f"{name}({symbol}) 暂无数据"
         arrow = "📈" if r["change_pct"] >= 0 else "📉"
-        return (
-            f"{arrow} {name}({symbol}) "
-            f"{r['current_price']:.4f} "
-            f"{r['change_pct']:+.2f}%"
-        )
+        return f"{arrow} {name}({symbol}) {r['current_price']:.4f} {r['change_pct']:+.2f}%"

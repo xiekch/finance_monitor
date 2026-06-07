@@ -1,7 +1,6 @@
 import logging
 import signal
 import sys
-from datetime import datetime
 import time
 import os
 from typing import Optional
@@ -10,49 +9,22 @@ from apscheduler.triggers.base import BaseTrigger
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from producers.astock_producer import AStockProducer
-from producers.usstock_producer import USStockProducer
-from producers.crypto_producer import CryptoProducer
-from producers.futures_producer import FuturesProducer
-from producers.x_briefing_producer import XBriefingProducer
-from producers.weibo_briefing_producer import WeiboBriefingProducer
-from producers.market_briefing_producer import MarketBriefingProducer
-from producers.morning_briefing_producer import MorningBriefingProducer
-from consumers.volatility_consumer import VolatilityConsumer
-from consumers.notification_consumer import NotificationConsumer
-from consumers.storage_consumer import StorageConsumer
-from consumers.ai_briefing_consumer import AIBriefingConsumer
-from infra.message_queue import mq
-from models.messages import MessageType, SystemEventMessage
+from steps.base import Step, Task, TaskRunner, Fork, FetchMultiSource
+from steps.fetch_astock import FetchAStock
+from steps.fetch_usstock import FetchUSStock
+from steps.fetch_crypto import FetchCrypto
+from steps.fetch_futures import FetchFutures
+from steps.fetch_x_posts import FetchXPosts
+from steps.fetch_weibo_posts import FetchWeiboPosts
+from steps.fetch_market_briefing import FetchMarketBriefing
+from steps.fetch_morning_briefing import FetchMorningBriefing
+from steps.storage import StorageStep
+from steps.volatility import VolatilityStep
+from steps.ai_briefing import AIBriefingStep
+from steps.notify import NotifyStep
+
 from config.settings import PRODUCER_SCHEDULE, MQ_BACKEND, WECOM_CONFIG
 from config.social import SOCIAL_CONFIG, assert_social_env_ready
-
-
-# (producer_cls, 构造时附加的 kwargs)；trigger 由 PRODUCER_SCHEDULE 单独提供
-PRODUCER_REGISTRY: dict[str, tuple[type, dict]] = {
-    "astock_minute":  (AStockProducer,  {"frequency": "minute"}),
-    "astock_daily":   (AStockProducer,  {"frequency": "daily"}),
-    "astock_weekly":  (AStockProducer,  {"frequency": "weekly"}),
-    "usstock_minute": (USStockProducer, {"frequency": "minute"}),
-    "usstock_daily":  (USStockProducer, {"frequency": "daily"}),
-    "usstock_weekly": (USStockProducer, {"frequency": "weekly"}),
-    "crypto_minute":  (CryptoProducer,  {"frequency": "minute"}),
-    "crypto_daily":   (CryptoProducer,  {"frequency": "daily"}),
-    "crypto_weekly":  (CryptoProducer,  {"frequency": "weekly"}),
-    "futures_minute":  (FuturesProducer,  {"frequency": "minute"}),
-    "futures_daily":   (FuturesProducer,  {"frequency": "daily"}),
-    "futures_weekly":  (FuturesProducer,  {"frequency": "weekly"}),
-    "x_briefing":     (XBriefingProducer, {}),
-    "weibo_briefing": (WeiboBriefingProducer, {}),
-    "market_briefing":(MarketBriefingProducer, {}),
-    "morning_briefing":(MorningBriefingProducer, {}),
-}
-
-DEFAULT_PRODUCERS: list[str] = ["usstock_daily", "crypto_daily", "x_briefing", "market_briefing", "morning_briefing"]
-
-
-def _using_redis_backend() -> bool:
-    return MQ_BACKEND == "redis"
 
 
 _TRIGGER_TYPES = {
@@ -62,7 +34,6 @@ _TRIGGER_TYPES = {
 
 
 def build_trigger(spec: Optional[dict]) -> Optional[BaseTrigger]:
-    """根据配置构造 APScheduler 触发器。spec=None 表示无调度。"""
     if spec is None:
         return None
     try:
@@ -74,17 +45,149 @@ def build_trigger(spec: Optional[dict]) -> Optional[BaseTrigger]:
     return trigger_cls(**spec.get("kwargs", {}))
 
 
-class ProducerConsumerApp:
-    """基于生产者-消费者模式的市场监控应用"""
+def _social_trigger() -> CronTrigger:
+    return CronTrigger(
+        hour=SOCIAL_CONFIG["cron_hours"],
+        minute=SOCIAL_CONFIG.get("cron_minute", 0),
+    )
+
+
+def _build_price_task(
+    market: str,
+    frequency: str,
+    run_immediately: bool,
+    ignore_schedule: bool,
+) -> Task:
+    fetch_cls = {
+        "astock": FetchAStock,
+        "usstock": FetchUSStock,
+        "crypto": FetchCrypto,
+        "futures": FetchFutures,
+    }[market]
+
+    name = f"{market}_{frequency}"
+    chain = fetch_cls(frequency) | StorageStep() | VolatilityStep() | NotifyStep()
+    trigger = build_trigger(PRODUCER_SCHEDULE.get(name))
+
+    return Task(
+        name=name,
+        chain=chain,
+        trigger=trigger,
+        run_immediately=run_immediately,
+        ignore_schedule=ignore_schedule,
+    )
+
+
+def _build_social_briefing_task(
+    fetchers: list[Step],
+    run_immediately: bool,
+    ignore_schedule: bool,
+) -> Task:
+    chain = (
+        FetchMultiSource(*fetchers)
+        | StorageStep()
+        | AIBriefingStep()
+        | Fork(StorageStep(), NotifyStep())
+    )
+    trigger = None if ignore_schedule else _social_trigger()
+
+    return Task(
+        name="social_briefing",
+        chain=chain,
+        trigger=trigger,
+        run_immediately=run_immediately,
+        ignore_schedule=ignore_schedule,
+    )
+
+
+def _build_market_briefing_task(
+    run_immediately: bool,
+    ignore_schedule: bool,
+) -> Task:
+    chain = FetchMarketBriefing() | NotifyStep()
+    trigger = build_trigger(PRODUCER_SCHEDULE.get("market_briefing"))
+
+    return Task(
+        name="market_briefing",
+        chain=chain,
+        trigger=trigger,
+        run_immediately=run_immediately,
+        ignore_schedule=ignore_schedule,
+    )
+
+
+def _build_morning_briefing_task(
+    run_immediately: bool,
+    ignore_schedule: bool,
+) -> Task:
+    chain = FetchMorningBriefing() | Fork(StorageStep(), NotifyStep())
+    trigger = build_trigger(PRODUCER_SCHEDULE.get("morning_briefing"))
+
+    return Task(
+        name="morning_briefing",
+        chain=chain,
+        trigger=trigger,
+        run_immediately=run_immediately,
+        ignore_schedule=ignore_schedule,
+    )
+
+
+# 所有可用的 task key；x_briefing / weibo_briefing 在构建时合并为 social_briefing
+TASK_KEYS: list[str] = [
+    "astock_minute", "astock_daily", "astock_weekly",
+    "usstock_minute", "usstock_daily", "usstock_weekly",
+    "crypto_minute", "crypto_daily", "crypto_weekly",
+    "futures_minute", "futures_daily", "futures_weekly",
+    "x_briefing", "weibo_briefing",
+    "market_briefing", "morning_briefing",
+]
+
+DEFAULT_TASKS: list[str] = [
+    "usstock_daily", "crypto_daily", "x_briefing", "market_briefing", "morning_briefing",
+]
+
+
+def build_tasks(
+    task_keys: list[str],
+    run_immediately: bool = True,
+    ignore_schedule: bool = False,
+) -> list[Task]:
+    tasks: list[Task] = []
+
+    # 价格类 task：market_frequency 形式
+    price_markets = {"astock", "usstock", "crypto", "futures"}
+    for key in task_keys:
+        parts = key.rsplit("_", 1)
+        if len(parts) == 2 and parts[0] in price_markets:
+            market, freq = parts
+            tasks.append(_build_price_task(market, freq, run_immediately, ignore_schedule))
+
+    # 社交简报：x_briefing / weibo_briefing 合并
+    social_fetchers: list[Step] = []
+    if "x_briefing" in task_keys:
+        social_fetchers.append(FetchXPosts())
+    if "weibo_briefing" in task_keys:
+        social_fetchers.append(FetchWeiboPosts())
+    if social_fetchers:
+        tasks.append(_build_social_briefing_task(social_fetchers, run_immediately, ignore_schedule))
+
+    # 行情早报
+    if "market_briefing" in task_keys:
+        tasks.append(_build_market_briefing_task(run_immediately, ignore_schedule))
+
+    # 公众号 AI 早报
+    if "morning_briefing" in task_keys:
+        tasks.append(_build_morning_briefing_task(run_immediately, ignore_schedule))
+
+    return tasks
+
+
+class TaskApp:
 
     def __init__(self):
-        self.producers = []
-        self.consumers = []
+        self.runner = TaskRunner()
         self.is_running = False
 
-        # 配置日志
-        # force=True 强制清掉已存在的 handler（某些第三方库 import 时会
-        # 抢先给 root 装 stderr handler + 提到 WARNING，会让 basicConfig 静默失效）
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -95,209 +198,73 @@ class ProducerConsumerApp:
             force=True,
         )
 
-        # 后台启动 Redis（仅 MQ_BACKEND=redis 时；默认走进程内 backend，无需 Redis）
-        if _using_redis_backend():
-            status = os.system("redis-server --daemonize yes")
-            if status == 0:
-                logging.info("Redis 启动命令执行成功（后台运行）")
-            else:
-                logging.error("Redis 启动失败，可能是命令不存在或权限问题")
-
-    def setup_producers(
+    def start(
         self,
-        producer_keys: list[str],
+        task_keys: list[str],
         run_immediately: bool = True,
         ignore_schedule: bool = False,
     ):
-        """Instantiate producers selected by short key.
+        welcome = f"\n{'=' * 50}\n启动 Task 编排市场监控系统\n{'=' * 50}"
+        logging.info(welcome)
+        print(f"运行模式: tasks={task_keys}, 立即执行={run_immediately}, 忽略调度={ignore_schedule}")
 
-        触发器从 config.settings.PRODUCER_SCHEDULE 读取并注入；
-        producer 类本身不再持有调度信息。
-
-        Args:
-            producer_keys: keys from PRODUCER_REGISTRY to enable.
-            run_immediately: run once on startup.
-            ignore_schedule: run only once, skip scheduling.
-        """
-        # 社交 producer env 检查
-        check_weibo = "weibo_briefing" in producer_keys
-        if "x_briefing" in producer_keys or check_weibo:
+        # 社交 env 检查
+        check_weibo = "weibo_briefing" in task_keys
+        if "x_briefing" in task_keys or check_weibo:
             assert_social_env_ready(check_weibo=check_weibo)
-        self._active_producer_keys = list(producer_keys)
-
-        for key in producer_keys:
-            cls, extra_kwargs = PRODUCER_REGISTRY[key]
-            trigger = build_trigger(PRODUCER_SCHEDULE.get(key))
-            self.producers.append(cls(
-                **extra_kwargs,
-                trigger=trigger,
-                run_immediately=run_immediately,
-                ignore_schedule=ignore_schedule,
-            ))
-
-        logging.info(f"已启用 producer: {producer_keys}")
-        print(f"生产者设置完成: {producer_keys}")
-
-    def setup_consumers(self):
-        """设置消费者"""
-        # 数据存储消费者
-        storage_consumer = StorageConsumer()
-        self.consumers.append(storage_consumer)
-
-        # 波动分析消费者
-        volatility_consumer = VolatilityConsumer()
-        self.consumers.append(volatility_consumer)
-
-        # 通知发送消费者
-        notification_consumer = NotificationConsumer()
-        self.consumers.append(notification_consumer)
-
-        # AI 简报消费者：仅在有社交 producer 启动时才启用
-        active = getattr(self, "_active_producer_keys", [])
-        platforms: set[str] = set()
-        if "x_briefing" in active:
-            platforms.add("x")
-        if "weibo_briefing" in active:
-            platforms.add("weibo")
-        if platforms:
-            self.consumers.append(AIBriefingConsumer(expected_platforms=platforms))
-            logging.info(f"[App] AIBriefingConsumer 已启用 expected_platforms={platforms}")
-
-        print("消费者设置完成")
-
-    def start_system(
-        self,
-        producer_keys: list[str],
-        run_immediately: bool = True,
-        ignore_schedule: bool = False,
-    ):
-        """启动系统
-
-        Args:
-            run_immediately: 是否在启动时立即执行一次生产任务
-            ignore_schedule: 是否忽略调度，只执行一次
-        """
-        welcome_str = f"\n{'=' * 50}\n启动生产者-消费者模式市场监控系统\n{'=' * 50}"
-        logging.info(welcome_str)
-
-        print(f"运行模式: producers={producer_keys}, 立即执行={run_immediately}, 忽略调度={ignore_schedule}")
 
         self.is_running = True
+        signal.signal(signal.SIGINT, self._signal_handler)
+        signal.signal(signal.SIGTERM, self._signal_handler)
 
-        # 设置信号处理
-        signal.signal(signal.SIGINT, self.signal_handler)
-        signal.signal(signal.SIGTERM, self.signal_handler)
+        tasks = build_tasks(task_keys, run_immediately, ignore_schedule)
+        for t in tasks:
+            self.runner.register(t)
 
-        # 设置生产者和消费者
-        self.setup_producers(
-            producer_keys=producer_keys,
-            run_immediately=run_immediately,
-            ignore_schedule=ignore_schedule,
-        )
-        self.setup_consumers()
+        self.runner.start()
 
-        # 启动消费者
-        for consumer in self.consumers:
-            consumer.start_consumption()
-
-        # 启动生产者
-        for producer in self.producers:
-            producer.start_production()
-
-        # 发送系统启动事件
-        startup_message = SystemEventMessage(
-            payload={
-                "event_type": "system_start",
-                "event_data": {
-                    "timestamp": datetime.now().isoformat(),
-                    "producers": [p.producer_name for p in self.producers],
-                    "consumers": [c.consumer_name for c in self.consumers],
-                    "run_immediately": run_immediately,
-                    "ignore_schedule": ignore_schedule,
-                },
-            },
-            source="ProducerConsumerApp",
-        )
-        mq.publish(MessageType.SYSTEM_EVENT.value, startup_message)
-
-        print("系统启动完成，所有生产者和消费者已开始运行")
+        task_names = [t.name for t in tasks]
+        logging.info(f"已启动 Task: {task_names}")
+        print(f"系统启动完成，已启动 {len(tasks)} 个 Task: {task_names}")
         print("按 Ctrl+C 停止系统")
 
-    def signal_handler(self, signum, frame):
-        """信号处理函数"""
+    def _signal_handler(self, signum, frame):
         print(f"\n接收到信号 {signum}，正在关闭系统...")
-        self.stop_system()
+        self.stop()
         sys.exit(0)
 
-    def stop_system(self):
-        """停止系统"""
+    def stop(self):
         if not self.is_running:
             return
-
         self.is_running = False
-
-        # 停止生产者
-        for producer in self.producers:
-            producer.stop_production()
-
-        # 停止消费者
-        for consumer in self.consumers:
-            consumer.stop_consumption()
-
-        # 发送系统关闭事件
-        shutdown_message = SystemEventMessage(
-            source="ProducerConsumerApp",
-            payload={
-                "event_type": "system_shutdown",
-                "event_data": {
-                    "timestamp": datetime.now().isoformat()
-                }
-            }
-        )
-        mq.publish(MessageType.SYSTEM_EVENT.value, shutdown_message)
-
-        if _using_redis_backend():
-            os.system("redis-cli shutdown")
-        logging.info("系统已完全停止")
+        self.runner.stop()
+        logging.info("系统已停止")
 
     def run(
         self,
-        producer_keys: list[str],
+        task_keys: list[str],
         run_immediately: bool = True,
         ignore_schedule: bool = False,
     ):
-        """运行应用
-
-        Args:
-            run_immediately: 是否在启动时立即执行一次
-            ignore_schedule: 是否忽略调度，只执行一次
-        """
         try:
-            self.start_system(
-                producer_keys=producer_keys,
-                run_immediately=run_immediately,
-                ignore_schedule=ignore_schedule,
-            )
+            self.start(task_keys, run_immediately, ignore_schedule)
 
-            # 不再固定 60 秒自动停止；--once 与常驻模式都等 Ctrl+C，
-            # 让 consumer 有充分时间处理完 producer 发出的消息。
-            # ignore_schedule 的语义仍然是"producer 只立即执行一次、不调度"。
             if ignore_schedule:
-                print("忽略调度模式，producer 已立即执行一次；保持运行以等待 consumer 处理完，按 Ctrl+C 退出。")
+                print("忽略调度模式，Task 已立即执行一次；保持运行等待处理完成，按 Ctrl+C 退出。")
             else:
                 print("正常调度模式，系统持续运行中，按 Ctrl+C 退出。")
+
             try:
                 while self.is_running:
                     time.sleep(1)
             except KeyboardInterrupt:
                 print("\n用户请求停止系统...")
-
         except KeyboardInterrupt:
             print("\n用户请求停止系统...")
         except Exception as e:
             logging.error(f"系统运行异常: {e}")
         finally:
-            self.stop_system()
+            self.stop()
 
 
 def parse_args(argv: list[str] | None = None):
@@ -305,16 +272,27 @@ def parse_args(argv: list[str] | None = None):
 
     parser = argparse.ArgumentParser(description="市场监控系统")
     parser.add_argument(
-        "--no-immediate", action="store_true", default=False, help="不立即执行生产任务"
+        "--no-immediate", action="store_true", default=False,
+        help="不立即执行",
     )
     parser.add_argument(
-        "--once", action="store_true", default=False, help="只执行一次，忽略调度"
+        "--once", action="store_true", default=False,
+        help="只执行一次，忽略调度",
     )
+    parser.add_argument(
+        "-t", "--tasks",
+        type=str,
+        default=None,
+        dest="tasks_arg",
+        help=f"逗号分隔的 task 短名，可选: {sorted(TASK_KEYS)}; 不传则使用默认 {DEFAULT_TASKS}",
+    )
+    # 保留 -p / --producers 作为别名兼容
     parser.add_argument(
         "-p", "--producers",
         type=str,
         default=None,
-        help=f"逗号分隔的 producer 短名，可选: {sorted(PRODUCER_REGISTRY)}; 不传则使用默认 {DEFAULT_PRODUCERS}",
+        dest="producers_arg",
+        help="(兼容别名) 等同于 --tasks",
     )
     parser.add_argument(
         "--webhook",
@@ -324,27 +302,34 @@ def parse_args(argv: list[str] | None = None):
         help="企微推送 webhook URL（可多次指定），覆盖环境变量 WECOM_WEBHOOK_URL",
     )
     parser.add_argument(
+        "--list-tasks",
+        action="store_true",
+        default=False,
+        help="列出所有可选 task 后退出",
+    )
+    # 兼容别名
+    parser.add_argument(
         "--list-producers",
         action="store_true",
         default=False,
-        help="列出所有可选 producer 后退出",
+        dest="list_tasks",
     )
 
     args = parser.parse_args(argv)
 
-    if args.producers is None:
-        args.producer_keys = list(DEFAULT_PRODUCERS)
+    raw_input = args.tasks_arg or args.producers_arg
+    if raw_input is None:
+        args.task_keys = list(DEFAULT_TASKS)
     else:
-        raw = [k.strip() for k in args.producers.split(",")]
+        raw = [k.strip() for k in raw_input.split(",")]
         keys = [k for k in raw if k]
         if not keys:
-            parser.error("--producers 不能为空")
+            parser.error("--tasks 不能为空")
 
-        unknown = sorted(set(keys) - PRODUCER_REGISTRY.keys())
+        valid = set(TASK_KEYS)
+        unknown = sorted(set(keys) - valid)
         if unknown:
-            parser.error(
-                f"未知 producer: {unknown}; 可选: {sorted(PRODUCER_REGISTRY)}"
-            )
+            parser.error(f"未知 task: {unknown}; 可选: {sorted(TASK_KEYS)}")
 
         seen = set()
         deduped = []
@@ -354,8 +339,8 @@ def parse_args(argv: list[str] | None = None):
             seen.add(k)
             deduped.append(k)
         if len(deduped) != len(keys):
-            logging.warning(f"producers 中存在重复 key，已去重: {keys} -> {deduped}")
-        args.producer_keys = deduped
+            logging.warning(f"tasks 中存在重复 key，已去重: {keys} -> {deduped}")
+        args.task_keys = deduped
 
     return args
 
@@ -363,24 +348,18 @@ def parse_args(argv: list[str] | None = None):
 if __name__ == "__main__":
     args = parse_args()
 
-    if args.list_producers:
-        print("可选 producer:")
-        for key, (cls, extra_kwargs) in PRODUCER_REGISTRY.items():
-            extras = ", ".join(f"{k}={v!r}" for k, v in extra_kwargs.items())
-            suffix = f" ({extras})" if extras else ""
-            print(f"  {key:16s} -> {cls.__name__}{suffix}")
+    if args.list_tasks:
+        print("可选 task:")
+        for key in TASK_KEYS:
+            print(f"  {key}")
         sys.exit(0)
 
     if args.webhook:
         WECOM_CONFIG['webhook_urls'] = args.webhook
 
-    app = ProducerConsumerApp()
-
-    run_immediately = not args.no_immediate
-    ignore_schedule = args.once
-
+    app = TaskApp()
     app.run(
-        producer_keys=args.producer_keys,
-        run_immediately=run_immediately,
-        ignore_schedule=ignore_schedule,
+        task_keys=args.task_keys,
+        run_immediately=not args.no_immediate,
+        ignore_schedule=args.once,
     )

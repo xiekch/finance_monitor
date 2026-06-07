@@ -1,14 +1,10 @@
-import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Sequence, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
-from apscheduler.triggers.base import BaseTrigger
-
-from producers.base_producer import BaseProducer
-from models.messages import BaseMessage, AIBriefingMessage
+from steps.base import Step
+from models.messages import AIBriefingMessage
 from models.market import PriceData
-from models.social import SocialPost
 from storage.market_db import MarketDataDB
 from storage.social_store import SocialPostStore
 from fetchers.us_stock_yf_fetcher import USStockYfFetcher
@@ -17,6 +13,7 @@ from fetchers.futures_fetcher import FuturesFetcher
 from clients.llm_client import BriefingInput, build_morning_llm_client
 from config.settings import API_CONFIG, MONITOR_CONFIG
 from config.morning_briefing import MORNING_BRIEFING_CONFIG
+
 
 _GROUPS: List[Tuple[str, Tuple[str, ...]]] = [
     ("A 股", ("SH", "SZ")),
@@ -29,22 +26,10 @@ _GROUPS: List[Tuple[str, Tuple[str, ...]]] = [
 _US_MARKETS = ("US", "NASDAQ", "NYSE")
 
 
-class MorningBriefingProducer(BaseProducer):
-    """公众号 AI 早报 producer：从 SQLite 读取近 N 小时社交帖子 + 拉取行情，
-    经 LLM 生成公众号风格早报，通过 AIBriefingMessage 推送。"""
+class FetchMorningBriefing(Step):
 
-    def __init__(
-        self,
-        trigger: Optional[BaseTrigger] = None,
-        run_immediately: bool = False,
-        ignore_schedule: bool = False,
-    ):
-        super().__init__(
-            "MorningBriefingProducer",
-            trigger=trigger,
-            run_immediately=run_immediately,
-            ignore_schedule=ignore_schedule,
-        )
+    def __init__(self):
+        self.name = "FetchMorningBriefing"
         self.social_store = SocialPostStore()
         self.market_db = MarketDataDB()
         self.us_fetcher = USStockYfFetcher(API_CONFIG)
@@ -53,21 +38,21 @@ class MorningBriefingProducer(BaseProducer):
         self.llm = build_morning_llm_client()
         self.cfg = MORNING_BRIEFING_CONFIG
 
-    async def produce_data(self) -> Sequence[BaseMessage]:
+    async def process(self, data: Any = None) -> AIBriefingMessage | None:
         window_hours = self.cfg["window_hours"]
         since = datetime.now() - timedelta(hours=window_hours)
 
         posts = self.social_store.get_posts_since(since)
         logging.info(
-            f"[{self.producer_name}] 读取到 {len(posts)} 条社交帖子 "
+            f"[{self.name}] 读取到 {len(posts)} 条社交帖子 "
             f"(window={window_hours}h, since={since.isoformat()})"
         )
 
         market_block = await self._build_market_block()
 
         if not posts and not market_block.strip():
-            logging.warning(f"[{self.producer_name}] 无社交帖子且无行情数据，跳过")
-            return []
+            logging.warning(f"[{self.name}] 无社交帖子且无行情数据，跳过")
+            return None
 
         bi = BriefingInput(
             posts=posts,
@@ -94,9 +79,7 @@ class MorningBriefingProducer(BaseProducer):
                 "window_hours": window_hours,
             }
         except Exception as e:
-            logging.error(
-                f"[{self.producer_name}] LLM 生成失败: {e}", exc_info=True,
-            )
+            logging.error(f"[{self.name}] LLM 生成失败: {e}", exc_info=True)
             md = (
                 f"📰 AI 早报生成失败\n\n"
                 f"收到 {len(posts)} 条帖子\n"
@@ -115,9 +98,7 @@ class MorningBriefingProducer(BaseProducer):
                 "window_hours": window_hours,
             }
 
-        return [AIBriefingMessage(payload=payload, source=self.producer_name)]
-
-    # ── 行情板块 ──
+        return AIBriefingMessage(payload=payload, source=self.name)
 
     async def _build_market_block(self) -> str:
         watchlist = self._collect_watchlist()
@@ -173,13 +154,11 @@ class MorningBriefingProducer(BaseProducer):
         try:
             if market in _US_MARKETS:
                 return await self.us_fetcher.fetch_historical_data(
-                    symbol=symbol, frequency="1d",
-                    start_date=start, end_date=end,
+                    symbol=symbol, frequency="1d", start_date=start, end_date=end,
                 )
             if market == "CRYPTO":
                 return await self.crypto_fetcher.fetch_historical_data(
-                    symbol=symbol, frequency="1d",
-                    start_date=start, end_date=end,
+                    symbol=symbol, frequency="1d", start_date=start, end_date=end,
                 )
             if market == "FUT":
                 return await self.futures_fetcher.fetch_historical_data(
@@ -187,26 +166,17 @@ class MorningBriefingProducer(BaseProducer):
                 )
             return None
         except Exception as e:
-            logging.error(
-                f"[{self.producer_name}] {symbol}({market}) fetch fallback 异常: {e}"
-            )
+            logging.error(f"[{self.name}] {symbol}({market}) fetch fallback 异常: {e}")
             return None
 
     @staticmethod
     def _build_row(
-        item: dict,
-        current: Optional[PriceData],
-        previous: Optional[PriceData],
+        item: dict, current: Optional[PriceData], previous: Optional[PriceData],
     ) -> dict:
         if current is None or previous is None or not previous.close:
             return {**item, "missing": True}
         change_pct = (current.close - previous.close) / previous.close * 100
-        return {
-            **item,
-            "missing": False,
-            "current_price": current.close,
-            "change_pct": change_pct,
-        }
+        return {**item, "missing": False, "current_price": current.close, "change_pct": change_pct}
 
     @staticmethod
     def _format_market_markdown(rows: List[dict]) -> str:
@@ -236,8 +206,7 @@ class MorningBriefingProducer(BaseProducer):
                     arrow = "📈" if r["change_pct"] >= 0 else "📉"
                     lines.append(
                         f"{arrow} {r['name']}({r['symbol']}) "
-                        f"{r['current_price']:.4f} "
-                        f"{r['change_pct']:+.2f}%"
+                        f"{r['current_price']:.4f} {r['change_pct']:+.2f}%"
                     )
             lines.append("")
         return "\n".join(lines)
