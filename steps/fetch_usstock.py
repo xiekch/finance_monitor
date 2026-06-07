@@ -59,8 +59,10 @@ class FetchUSStock(Step):
                         start_date=end - timedelta(days=7), end_date=end,
                     )
                 else:
+                    end = datetime.now()
                     rows = await self.fetcher.fetch_historical_data(
-                        symbol=symbol, frequency=fetcher_freq, limit=1,
+                        symbol=symbol, frequency=fetcher_freq,
+                        start_date=end - timedelta(days=14), end_date=end,
                     )
                 if not rows:
                     continue

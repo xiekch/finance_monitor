@@ -3,14 +3,14 @@ import signal
 import sys
 import time
 import os
-from typing import Optional
+from typing import Callable, Optional
 
 from apscheduler.triggers.base import BaseTrigger
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 
-from steps.base import Task, TaskRunner, Fork
+from steps.base import Step, Task, TaskRunner, Fork
 from steps.fetch_astock import FetchAStock
 from steps.fetch_usstock import FetchUSStock
 from steps.fetch_crypto import FetchCrypto
@@ -54,7 +54,7 @@ def build_trigger(spec: Optional[dict]) -> Optional[BaseTrigger]:
 _PRICE_FETCH = {"astock": FetchAStock, "usstock": FetchUSStock, "crypto": FetchCrypto, "futures": FetchFutures}
 
 # key → chain 工厂；trigger 统一从 TASK_SCHEDULE 查
-TASK_REGISTRY: dict[str, callable] = {
+TASK_REGISTRY: dict[str, Callable[[], Step]] = {
     **{f"{m}_{f}": (lambda m=m, f=f: _PRICE_FETCH[m](f) | StorageStep() | VolatilityStep() | NotifyStep())
        for m in _PRICE_FETCH for f in ("minute", "daily", "weekly")},
     "x_briefing":       lambda: FetchXPosts() | StorageStep() | AIBriefingStep() | Fork(StorageStep(), NotifyStep()),
