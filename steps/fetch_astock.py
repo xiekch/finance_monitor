@@ -4,7 +4,7 @@ from typing import Any, List
 
 from steps.base import Step
 from models.messages import PriceDataMessage, MessageType
-from fetchers.stock_fetcher import StockFetcher
+from fetchers.astock_fetcher import AStockFetcher
 from config.settings import API_CONFIG
 from config.monitor import MONITOR_CONFIG
 
@@ -19,7 +19,7 @@ class FetchAStock(Step):
             raise ValueError(f"未知 frequency: {frequency}")
         self.frequency = frequency
         self.name = f"FetchAStock({frequency})"
-        self.stock_fetcher = StockFetcher(API_CONFIG)
+        self.stock_fetcher = AStockFetcher(API_CONFIG)
 
     async def process(self, data: Any = None) -> List[PriceDataMessage]:
         symbols = [

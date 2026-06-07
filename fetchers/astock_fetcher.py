@@ -9,7 +9,7 @@ from models.market import PriceData
 from storage.market_db import MarketDataDB
 from infra.trading_hours import TradingHoursManager
 
-class StockFetcher(BaseFetcher):
+class AStockFetcher(BaseFetcher):
     """股票数据获取器"""
     
     def __init__(self, api_config: dict):
@@ -66,7 +66,7 @@ class StockFetcher(BaseFetcher):
         elif market in ['US', 'NASDAQ', 'NYSE']:
             return await self._fetch_finage_data(session, symbol_info)
         else:
-            logging.warning(f"[StockFetcher] 未知市场类型: {market} for symbol {symbol}")
+            logging.warning(f"[AStockFetcher] 未知市场类型: {market} for symbol {symbol}")
             return None
     
     async def _fetch_itick_data(self, session: aiohttp.ClientSession, 
@@ -102,11 +102,11 @@ class StockFetcher(BaseFetcher):
                             frequency='1m'
                         )
                 else:
-                    logging.error(f"[StockFetcher] iTick API错误: {response.status}")
+                    logging.error(f"[AStockFetcher] iTick API错误: {response.status}")
                     return None
 
         except Exception as e:
-            logging.error(f"[StockFetcher] iTick 数据获取失败 {symbol_info['name']}: {e}")
+            logging.error(f"[AStockFetcher] iTick 数据获取失败 {symbol_info['name']}: {e}")
             return None
     
     async def _fetch_finage_data(self, session: aiohttp.ClientSession, 
@@ -136,11 +136,11 @@ class StockFetcher(BaseFetcher):
                         frequency='1m'
                     )
                 else:
-                    logging.error(f"[StockFetcher] Finage API错误: {response.status}")
+                    logging.error(f"[AStockFetcher] Finage API错误: {response.status}")
                     return None
 
         except Exception as e:
-            logging.error(f"[StockFetcher] Finage 数据获取失败 {symbol_info['name']}: {e}")
+            logging.error(f"[AStockFetcher] Finage 数据获取失败 {symbol_info['name']}: {e}")
             return None
     
     async def fetch_historical_data(
@@ -157,7 +157,7 @@ class StockFetcher(BaseFetcher):
         所以暂时只支持指数。需要加个股时再扩 endpoint。
         """
         if frequency not in ('1d', '1w'):
-            logging.error(f"[StockFetcher] 不支持的历史频率: {frequency}")
+            logging.error(f"[AStockFetcher] 不支持的历史频率: {frequency}")
             return []
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
@@ -171,13 +171,13 @@ class StockFetcher(BaseFetcher):
             import akshare as ak
             import pandas as pd
         except ImportError:
-            logging.error("[StockFetcher] akshare/pandas 未安装，无法拉取 A 股历史数据")
+            logging.error("[AStockFetcher] akshare/pandas 未安装，无法拉取 A 股历史数据")
             return []
 
         market_upper = (market or '').upper()
         if market_upper not in ('SH', 'SZ'):
             logging.error(
-                f"[StockFetcher] 历史数据仅支持 SH/SZ 指数, 收到 market={market!r} symbol={symbol}"
+                f"[AStockFetcher] 历史数据仅支持 SH/SZ 指数, 收到 market={market!r} symbol={symbol}"
             )
             return []
         ak_symbol = f"{market_upper.lower()}{symbol}"
@@ -185,10 +185,10 @@ class StockFetcher(BaseFetcher):
         try:
             df = ak.stock_zh_index_daily(symbol=ak_symbol)
         except Exception as e:
-            logging.error(f"[StockFetcher] akshare 拉取 {ak_symbol} 失败: {e}")
+            logging.error(f"[AStockFetcher] akshare 拉取 {ak_symbol} 失败: {e}")
             return []
         if df is None or df.empty:
-            logging.warning(f"[StockFetcher] akshare {ak_symbol} 返回空")
+            logging.warning(f"[AStockFetcher] akshare {ak_symbol} 返回空")
             return []
 
         df = df.copy()

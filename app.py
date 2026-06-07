@@ -17,8 +17,9 @@ from steps.fetch_crypto import FetchCrypto
 from steps.fetch_futures import FetchFutures
 from steps.fetch_x_posts import FetchXPosts
 from steps.fetch_weibo_posts import FetchWeiboPosts
-from steps.fetch_market_briefing import FetchMarketBriefing
-from steps.fetch_morning_briefing import FetchMorningBriefing
+from steps.fetch_morning_data import FetchMorningData
+from steps.morning_ai import MorningAIStep
+from steps.market_briefing import MarketBriefingStep
 from steps.storage import StorageStep
 from steps.volatility import VolatilityStep
 from steps.ai_briefing import AIBriefingStep
@@ -58,14 +59,14 @@ TASK_REGISTRY: dict[str, callable] = {
        for m in _PRICE_FETCH for f in ("minute", "daily", "weekly")},
     "x_briefing":       lambda: FetchXPosts() | StorageStep() | AIBriefingStep() | Fork(StorageStep(), NotifyStep()),
     "weibo_briefing":   lambda: FetchWeiboPosts() | StorageStep() | AIBriefingStep() | Fork(StorageStep(), NotifyStep()),
-    "market_briefing":  lambda: FetchMarketBriefing() | NotifyStep(),
-    "morning_briefing": lambda: FetchMorningBriefing() | Fork(StorageStep(), NotifyStep(), PublishMPStep()),
+    "market_briefing":  lambda: FetchMorningData() | MarketBriefingStep() | NotifyStep(),
+    "morning_briefing": lambda: FetchMorningData() | MorningAIStep() | Fork(StorageStep(), NotifyStep(), PublishMPStep()),
 }
 
 TASK_KEYS: list[str] = list(TASK_REGISTRY)
 
 DEFAULT_TASKS: list[str] = [
-    "usstock_daily", "crypto_daily", "x_briefing", "market_briefing", "morning_briefing",
+    "x_briefing", "market_briefing", "morning_briefing",
 ]
 
 
