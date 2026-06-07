@@ -9,8 +9,8 @@ from config.settings import WECOM_CONFIG
 class WeChatNotifier:
     """企业微信通知器，支持同时推送到多个 webhook"""
 
-    def __init__(self):
-        self.webhook_urls: list[str] = WECOM_CONFIG['webhook_urls']
+    def __init__(self, webhook_urls: list[str] | None = None):
+        self.webhook_urls: list[str] = webhook_urls or WECOM_CONFIG['webhook_urls']
         self.session = requests.Session()
 
     def send_alert(self, alert: VolatilityAlert) -> bool:

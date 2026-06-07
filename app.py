@@ -24,6 +24,7 @@ from steps.storage import StorageStep
 from steps.volatility import VolatilityStep
 from steps.ai_briefing import AIBriefingStep
 from steps.notify import NotifyStep
+from steps.morning_notify import MorningNotifyStep
 from steps.publish_mp import PublishMPStep
 
 from config.schedule import TASK_SCHEDULE
@@ -50,17 +51,15 @@ def build_trigger(spec: Optional[dict]) -> Optional[BaseTrigger]:
 
 
 # ── Task 注册表 ──────────────────────────────────────────────
-# key → (chain 工厂, trigger 工厂)；trigger 为 None 则从 TASK_SCHEDULE 查
 _PRICE_FETCH = {"astock": FetchAStock, "usstock": FetchUSStock, "crypto": FetchCrypto, "futures": FetchFutures}
 
-# key → chain 工厂；trigger 统一从 TASK_SCHEDULE 查
 TASK_REGISTRY: dict[str, Callable[[], Step]] = {
     **{f"{m}_{f}": (lambda m=m, f=f: _PRICE_FETCH[m](f) | StorageStep() | VolatilityStep() | NotifyStep())
        for m in _PRICE_FETCH for f in ("minute", "daily", "weekly")},
     "x_briefing":       lambda: FetchXPosts() | StorageStep() | AIBriefingStep() | Fork(StorageStep(), NotifyStep()),
     "weibo_briefing":   lambda: FetchWeiboPosts() | StorageStep() | AIBriefingStep() | Fork(StorageStep(), NotifyStep()),
-    "market_briefing":  lambda: FetchMorningData() | MarketBriefingStep() | NotifyStep(),
-    "morning_briefing": lambda: FetchMorningData() | MorningAIStep() | Fork(StorageStep(), NotifyStep(), PublishMPStep()),
+    "market_briefing":  lambda: FetchMorningData() | MarketBriefingStep() | MorningNotifyStep(),
+    "morning_briefing": lambda: FetchMorningData() | MorningAIStep() | Fork(StorageStep(), MorningNotifyStep(), PublishMPStep()),
 }
 
 TASK_KEYS: list[str] = list(TASK_REGISTRY)

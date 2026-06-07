@@ -11,6 +11,11 @@ WECHAT_MP_CONFIG = {
     'thumb_media_id': os.getenv('WECHAT_MP_THUMB_MEDIA_ID', ''),
 }
 
+# 早报专用企微 webhook（可选，逗号分隔）；未配置时 fallback 到 WECOM_CONFIG
+MORNING_WEBHOOK_URLS: list[str] = [
+    u.strip() for u in os.getenv('MORNING_WEBHOOK_URL', '').split(',') if u.strip()
+]
+
 MORNING_BRIEFING_CONFIG = {
     "cron_hour": 9,
     "cron_minute": 35,
