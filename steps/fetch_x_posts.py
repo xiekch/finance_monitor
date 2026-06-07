@@ -1,10 +1,12 @@
 import logging
 from collections import Counter
 from dataclasses import asdict
+from datetime import datetime, timedelta
 from typing import Any, List
 
 from steps.base import Step
 from models.messages import SocialPostBatchMessage
+from models.social import SocialPost
 from clients.social_client import SocialClient, build_default_social_client
 from storage.social_store import SocialPostStore
 from config.social import SOCIAL_CONFIG
@@ -24,7 +26,8 @@ class FetchXPosts(Step):
     async def process(self, data: Any = None) -> SocialPostBatchMessage | None:
         whitelist: List[str] = SOCIAL_CONFIG["whitelist"]
         limit: int = SOCIAL_CONFIG["fetch_limit_per_user"]
-        all_new = []
+        window_hours: int = SOCIAL_CONFIG["window_hours"]
+        all_new: List[SocialPost] = []
 
         for handle in whitelist:
             since_id = self.store.get_latest_post_id(handle, platform="x")
@@ -35,17 +38,34 @@ class FetchXPosts(Step):
                 continue
             all_new.extend(posts)
 
-        if not all_new:
-            logging.info(f"[{self.name}] no new posts, skip")
+        db_posts = self.store.get_posts_since(
+            datetime.now() - timedelta(hours=window_hours), platform="x",
+        )
+
+        seen_ids: set[str] = set()
+        merged: List[SocialPost] = []
+        for p in list(all_new) + db_posts:
+            if p.post_id in seen_ids:
+                continue
+            seen_ids.add(p.post_id)
+            merged.append(p)
+        merged.sort(key=lambda p: p.created_at)
+
+        if not merged:
+            logging.info(f"[{self.name}] no new posts and no db history, skip")
             return None
 
-        by_author = dict(Counter(p.author for p in all_new))
-        logging.info(f"[{self.name}] batch ready: {len(all_new)} posts, by_author={by_author}")
+        by_author = dict(Counter(p.author for p in merged))
+        logging.info(
+            f"[{self.name}] batch ready: {len(merged)} posts "
+            f"(new={len(all_new)}, db={len(db_posts)}, deduped={len(merged)}), "
+            f"by_author={by_author}"
+        )
 
         payload = {
-            "posts": [asdict(p) for p in all_new],
+            "posts": [asdict(p) for p in merged],
             "platform": "x",
-            "window_hours": SOCIAL_CONFIG["window_hours"],
-            "stats": {"total": len(all_new), "by_author": by_author},
+            "window_hours": window_hours,
+            "stats": {"total": len(merged), "new": len(all_new), "by_author": by_author},
         }
         return SocialPostBatchMessage(payload=payload, source=self.name)
