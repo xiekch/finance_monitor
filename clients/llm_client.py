@@ -73,6 +73,7 @@ class TongyiLLMClient:
             f"[TongyiLLMClient] invoking model={self.model} "
             f"posts={len(payload.posts)} prompt_chars={len(prompt)}"
         )
+        logging.info(f"[TongyiLLMClient] prompt:\n{prompt}")
         last_err: Optional[Exception] = None
         for attempt in range(2):
             t0 = time.time()
