@@ -201,11 +201,6 @@ class TestAppIntegration:
         args = parse_args(["-t", "astock_daily,crypto_daily"])
         assert args.task_keys == ["astock_daily", "crypto_daily"]
 
-    def test_parse_args_producers_compat(self):
-        from app import parse_args
-        args = parse_args(["-p", "x_briefing"])
-        assert args.task_keys == ["x_briefing"]
-
     def test_parse_args_dedup(self):
         from app import parse_args
         args = parse_args(["-t", "crypto_daily,crypto_daily"])

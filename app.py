@@ -192,14 +192,6 @@ def parse_args(argv: list[str] | None = None):
         dest="tasks_arg",
         help=f"逗号分隔的 task 短名，可选: {sorted(TASK_KEYS)}; 不传则使用默认 {DEFAULT_TASKS}",
     )
-    # 保留 -p / --producers 作为别名兼容
-    parser.add_argument(
-        "-p", "--producers",
-        type=str,
-        default=None,
-        dest="producers_arg",
-        help="(兼容别名) 等同于 --tasks",
-    )
     parser.add_argument(
         "--webhook",
         type=str,
@@ -213,17 +205,9 @@ def parse_args(argv: list[str] | None = None):
         default=False,
         help="列出所有可选 task 后退出",
     )
-    # 兼容别名
-    parser.add_argument(
-        "--list-producers",
-        action="store_true",
-        default=False,
-        dest="list_tasks",
-    )
-
     args = parser.parse_args(argv)
 
-    raw_input = args.tasks_arg or args.producers_arg
+    raw_input = args.tasks_arg
     if raw_input is None:
         args.task_keys = list(DEFAULT_TASKS)
     else:

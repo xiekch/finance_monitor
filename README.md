@@ -118,9 +118,6 @@ python3 -m venv .venv
 # 只启动指定 task（逗号分隔）
 .venv/bin/python3 app.py -t usstock_minute,crypto_minute
 
-# 也支持旧的 -p / --producers 别名
-.venv/bin/python3 app.py -p usstock_daily,crypto_daily
-
 # 指定企微推送 webhook（可多次指定，覆盖 .env 中的 WECOM_WEBHOOK_URL）
 .venv/bin/python3 app.py --webhook "https://...?key=aaa" --webhook "https://...?key=bbb"
 
