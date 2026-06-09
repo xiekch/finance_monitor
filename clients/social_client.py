@@ -177,7 +177,7 @@ class TwitterApiIoClient:
     _MAX_ATTEMPTS = 3
     _RETRY_AFTER_DEFAULT = 6.0   # twitterapi.io free tier 1 req / 5s，留 1s 冗余
 
-    def _get_with_retry(self, url: str, params: dict, label: str) -> dict:
+    def _get_with_retry(self, url: str, params: dict, label: str, *, check_status: bool = True) -> dict:
         """按错误类型分流：
         - 429：优先读 Retry-After（数字秒），否则默认 6s
         - 5xx / 网络错（Timeout / ConnectionError）：指数 backoff 1s→2s→4s
@@ -195,7 +195,7 @@ class TwitterApiIoClient:
                 else:
                     resp.raise_for_status()
                     payload = resp.json()
-                    if payload.get("status") != "success":
+                    if check_status and payload.get("status") != "success":
                         raise RuntimeError(
                             f"api error: {payload.get('msg') or payload.get('message') or payload}"
                         )
@@ -243,6 +243,55 @@ class TwitterApiIoClient:
             is_retweet=is_retweet,
             referenced_url=referenced_url,
         )
+
+
+    async def search_tweets(
+        self, query: str, limit: int = 40,
+    ) -> List[SocialPost]:
+        """advanced_search 端点：用搜索语法一次拉多个账号的推文。
+
+        query 示例: "from:elonmusk OR from:sama OR from:karpathy"
+        每次 API 调用 300 credits，每页 20 条；合并多账号为一条 query 减少请求数。
+        """
+        url = f"{self.base_url}/twitter/tweet/advanced_search"
+        out: List[SocialPost] = []
+        cursor = ""
+        page = 0
+        page_cap = min(20, (limit + self._PAGE_SIZE - 1) // self._PAGE_SIZE + 1)
+
+        while len(out) < limit and page < page_cap:
+            if page > 0:
+                time.sleep(self._RATE_LIMIT_SLEEP)
+
+            params: dict = {"query": query, "queryType": "Latest"}
+            if cursor:
+                params["cursor"] = cursor
+            payload = self._get_with_retry(
+                url, params, f"search page {page + 1}",
+                check_status=False,
+            )
+
+            tweets = payload.get("tweets") or []
+            out.extend(self._parse(t) for t in tweets)
+            cursor = payload.get("next_cursor") or ""
+            has_next = bool(payload.get("has_next_page"))
+            page += 1
+
+            logging.info(
+                f"[TwitterApiIoClient] search page {page} +{len(tweets)} "
+                f"(total {len(out)}/{limit} has_next={has_next})"
+            )
+
+            if not has_next or not tweets:
+                break
+
+        result = out[:limit]
+        for p in result:
+            snippet = p.text.replace("\n", " ")[:120]
+            suffix = "..." if len(p.text) > 120 else ""
+            rt = " [RT]" if p.is_retweet else ""
+            logging.info(f"  └ [{p.post_id}]{rt} {snippet}{suffix}")
+        return result
 
 
 def _compose_text_with_context(t: dict) -> tuple[str, bool, Optional[str]]:

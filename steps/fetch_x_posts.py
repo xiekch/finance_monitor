@@ -25,18 +25,27 @@ class FetchXPosts(Step):
 
     async def process(self, data: Any = None) -> SocialPostBatchMessage | None:
         whitelist: List[str] = SOCIAL_CONFIG["whitelist"]
-        limit: int = SOCIAL_CONFIG["fetch_limit_per_user"]
         window_hours: int = SOCIAL_CONFIG["window_hours"]
-        all_new: List[SocialPost] = []
+        fetch_mode: str = SOCIAL_CONFIG["social_provider"].get("fetch_mode", "timeline")
 
-        for handle in whitelist:
-            since_id = self.store.get_latest_post_id(handle, platform="x")
+        all_new: List[SocialPost] = []
+        if fetch_mode == "search":
+            query = " OR ".join(f"from:{h}" for h in whitelist)
             try:
-                posts = await self.social.fetch_user_timeline(handle, since_id, limit)
+                search_limit = SOCIAL_CONFIG["social_provider"].get("search_limit", 40)
+                all_new = await self.social.search_tweets(query, limit=search_limit)
             except Exception as e:
-                logging.warning(f"[{self.name}] @{handle} fetch failed, skip: {e}")
-                continue
-            all_new.extend(posts)
+                logging.error(f"[{self.name}] advanced_search failed: {e}", exc_info=True)
+        else:
+            limit: int = SOCIAL_CONFIG["fetch_limit_per_user"]
+            for handle in whitelist:
+                since_id = self.store.get_latest_post_id(handle, platform="x")
+                try:
+                    posts = await self.social.fetch_user_timeline(handle, since_id, limit)
+                except Exception as e:
+                    logging.warning(f"[{self.name}] @{handle} fetch failed, skip: {e}")
+                    continue
+                all_new.extend(posts)
 
         db_posts = self.store.get_posts_since(
             datetime.now() - timedelta(hours=window_hours), platform="x",

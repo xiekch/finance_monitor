@@ -48,6 +48,11 @@ SOCIAL_CONFIG = {
         "timeout_sec": 20,
         # 是否拉取 reply 推文。True 时一并抓 @某人 的回复（quote_tweet 不影响）
         "include_replies": False,
+        # 拉取模式：
+        # - "search": advanced_search 合并查询，所有账号一条 query，省 API 调用
+        # - "timeline": 逐账号 last_tweets，支持 since_id 增量
+        "fetch_mode": "search",
+        "search_limit": 60,
     },
 
     # LLM
