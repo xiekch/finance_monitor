@@ -246,11 +246,12 @@ class TwitterApiIoClient:
 
 
     async def search_tweets(
-        self, query: str, limit: int = 40,
+        self, query: str, limit: int = 40, since: datetime | None = None,
     ) -> List[SocialPost]:
         """advanced_search 端点：用搜索语法一次拉多个账号的推文。
 
         query 示例: "from:elonmusk OR from:sama OR from:karpathy"
+        since: 只拉取此时间之后的推文，避免重复拉取旧数据（通过 since_time: 操作符注入 query）
         每次 API 调用 300 credits，每页 20 条；合并多账号为一条 query 减少请求数。
         """
         url = f"{self.base_url}/twitter/tweet/advanced_search"
@@ -258,6 +259,12 @@ class TwitterApiIoClient:
         cursor = ""
         page = 0
         page_cap = min(20, (limit + self._PAGE_SIZE - 1) // self._PAGE_SIZE + 1)
+
+        # 时间过滤通过 advanced-search 操作符注入 query 字符串
+        # https://github.com/igorbrigadir/twitter-advanced-search
+        if since:
+            since_ts = int(since.timestamp())
+            query = f"{query} since_time:{since_ts}"
 
         while len(out) < limit and page < page_cap:
             if page > 0:

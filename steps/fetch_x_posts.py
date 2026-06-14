@@ -33,7 +33,8 @@ class FetchXPosts(Step):
             query = " OR ".join(f"from:{h}" for h in whitelist)
             try:
                 search_limit = SOCIAL_CONFIG["social_provider"].get("search_limit", 40)
-                all_new = await self.social.search_tweets(query, limit=search_limit)
+                since = datetime.now() - timedelta(hours=window_hours)
+                all_new = await self.social.search_tweets(query, limit=search_limit, since=since)
             except Exception as e:
                 logging.error(f"[{self.name}] advanced_search failed: {e}", exc_info=True)
         else:
