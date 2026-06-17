@@ -28,13 +28,15 @@ class FetchXPosts(Step):
         window_hours: int = SOCIAL_CONFIG["window_hours"]
         fetch_mode: str = SOCIAL_CONFIG["social_provider"].get("fetch_mode", "timeline")
 
-        all_new: List[SocialPost] = []
-        since = window_since(window_hours)
+        posts: List[SocialPost] = []
         if fetch_mode == "search":
             query = " OR ".join(f"from:{h}" for h in whitelist)
             try:
+                since = window_since(window_hours)
                 search_limit = SOCIAL_CONFIG["social_provider"].get("search_limit", 40)
-                all_new = await self.social.search_tweets(query, limit=search_limit, since=since)
+                posts = await self.social.search_tweets(
+                    query, limit=search_limit, since=since,
+                )
             except Exception as e:
                 logging.error(f"[{self.name}] advanced_search failed: {e}", exc_info=True)
         else:
@@ -42,38 +44,26 @@ class FetchXPosts(Step):
             for handle in whitelist:
                 since_id = self.store.get_latest_post_id(handle, platform="x")
                 try:
-                    posts = await self.social.fetch_user_timeline(handle, since_id, limit)
+                    fetched = await self.social.fetch_user_timeline(handle, since_id, limit)
                 except Exception as e:
                     logging.warning(f"[{self.name}] @{handle} fetch failed, skip: {e}")
                     continue
-                all_new.extend(posts)
+                posts.extend(fetched)
 
-        db_posts = self.store.get_posts_since(since, platform="x")
-
-        seen_ids: set[str] = set()
-        merged: List[SocialPost] = []
-        for p in list(all_new) + db_posts:
-            if p.post_id in seen_ids:
-                continue
-            seen_ids.add(p.post_id)
-            merged.append(p)
-        merged.sort(key=lambda p: p.created_at)
-
-        if not merged:
-            logging.info(f"[{self.name}] no new posts and no db history, skip")
+        if not posts:
+            logging.info(f"[{self.name}] no posts, skip")
             return None
 
-        by_author = dict(Counter(p.author for p in merged))
+        posts.sort(key=lambda p: p.created_at)
+        by_author = dict(Counter(p.author for p in posts))
         logging.info(
-            f"[{self.name}] batch ready: {len(merged)} posts "
-            f"(new={len(all_new)}, db={len(db_posts)}, deduped={len(merged)}), "
-            f"by_author={by_author}"
+            f"[{self.name}] batch ready: {len(posts)} posts, by_author={by_author}"
         )
 
         payload = {
-            "posts": [asdict(p) for p in merged],
+            "posts": [asdict(p) for p in posts],
             "platform": "x",
             "window_hours": window_hours,
-            "stats": {"total": len(merged), "new": len(all_new), "by_author": by_author},
+            "stats": {"total": len(posts), "new": len(posts), "by_author": by_author},
         }
         return SocialPostBatchMessage(payload=payload, source=self.name)
