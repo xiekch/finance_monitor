@@ -253,6 +253,7 @@ class TwitterApiIoClient:
         query 示例: "from:elonmusk OR from:sama OR from:karpathy"
         since: 只拉取此时间之后的推文，避免重复拉取旧数据（通过 since_time: 操作符注入 query）
         每次 API 调用 300 credits，每页 20 条；合并多账号为一条 query 减少请求数。
+        首页不满 20 条视为窗口内已拉尽，不再翻页。
         """
         url = f"{self.base_url}/twitter/tweet/advanced_search"
         out: List[SocialPost] = []
@@ -290,6 +291,10 @@ class TwitterApiIoClient:
             )
 
             if not has_next or not tweets:
+                break
+
+            # 首页不满页说明 since_time 窗口内已无更多新推，不必再翻页（每页 300 credits）
+            if page == 1 and len(tweets) < self._PAGE_SIZE:
                 break
 
         result = out[:limit]
