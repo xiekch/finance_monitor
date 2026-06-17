@@ -62,7 +62,7 @@ TASK_SCHEDULE = {
     # 社交简报
     'x_briefing': {
         'type': 'cron',
-        'kwargs': {'hour': '8,20', 'minute': 7},
+        'kwargs': {'hour': 8, 'minute': 50},
     },
     'weibo_briefing': {
         'type': 'cron',

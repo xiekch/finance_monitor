@@ -7,11 +7,11 @@ load_dotenv()
 
 SOCIAL_CONFIG = {
     # 简报 cron 时段（小时，逗号分隔）
-    "cron_hours": "8,20",
+    "cron_hours": "8",
     # 触发分钟，避开整点全网 API 高峰；保留 0~59 整数（apscheduler CronTrigger.minute 语义）
-    "cron_minute": 7,
+    "cron_minute": 50,
     # 每次简报覆盖的回看窗口（仅作为 LLM prompt 上下文，不限制 since_id 增量）
-    "window_hours": 12,
+    "window_hours": 24,
 
     # 关注的 X 账号白名单（不带 @）
     # twitterapi.io free tier 限速 1 req / 5 sec（fetch_limit=40）
@@ -52,7 +52,7 @@ SOCIAL_CONFIG = {
         # - "search": advanced_search 合并查询，所有账号一条 query，省 API 调用
         # - "timeline": 逐账号 last_tweets，支持 since_id 增量
         "fetch_mode": "search",
-        "search_limit": 60,
+        "search_limit": 80,
     },
 
     # LLM
