@@ -9,7 +9,7 @@ class SocialPost:
     author: str           # @handle（不带 @）或微博 screen_name
     author_name: str
     text: str
-    created_at: str       # ISO8601 字符串，避免 datetime 跨进程序列化的坑
+    created_at: str       # UTC ISO8601 字符串
     url: str
     is_retweet: bool = False
     referenced_url: Optional[str] = None
@@ -26,7 +26,7 @@ class SocialPost:
 
 @dataclass
 class Briefing:
-    created_at: str          # ISO
+    created_at: str          # UTC ISO8601
     window_hours: int
     source_post_ids: List[str]
     markdown: str

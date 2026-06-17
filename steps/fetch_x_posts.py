@@ -1,7 +1,6 @@
 import logging
 from collections import Counter
 from dataclasses import asdict
-from datetime import datetime, timedelta
 from typing import Any, List
 
 from steps.base import Step
@@ -10,6 +9,7 @@ from models.social import SocialPost
 from clients.social_client import SocialClient, build_default_social_client
 from storage.social_store import SocialPostStore
 from config.social import SOCIAL_CONFIG
+from utils.time_util import window_since
 
 
 class FetchXPosts(Step):
@@ -29,11 +29,11 @@ class FetchXPosts(Step):
         fetch_mode: str = SOCIAL_CONFIG["social_provider"].get("fetch_mode", "timeline")
 
         all_new: List[SocialPost] = []
+        since = window_since(window_hours)
         if fetch_mode == "search":
             query = " OR ".join(f"from:{h}" for h in whitelist)
             try:
                 search_limit = SOCIAL_CONFIG["social_provider"].get("search_limit", 40)
-                since = datetime.now() - timedelta(hours=window_hours)
                 all_new = await self.social.search_tweets(query, limit=search_limit, since=since)
             except Exception as e:
                 logging.error(f"[{self.name}] advanced_search failed: {e}", exc_info=True)
@@ -48,9 +48,7 @@ class FetchXPosts(Step):
                     continue
                 all_new.extend(posts)
 
-        db_posts = self.store.get_posts_since(
-            datetime.now() - timedelta(hours=window_hours), platform="x",
-        )
+        db_posts = self.store.get_posts_since(since, platform="x")
 
         seen_ids: set[str] = set()
         merged: List[SocialPost] = []

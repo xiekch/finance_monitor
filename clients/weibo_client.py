@@ -8,6 +8,7 @@ from typing import List, Optional
 import requests
 
 from models.social import SocialPost
+from utils.time_util import normalize_timestamp, to_utc_iso
 
 
 class WeiboClient:
@@ -107,11 +108,12 @@ class WeiboClient:
     def _parse(s: dict) -> SocialPost:
         raw_dt = s.get("created_at", "")
         try:
-            iso_dt = datetime.strptime(
+            dt = datetime.strptime(
                 raw_dt, "%a %b %d %H:%M:%S %z %Y"
-            ).isoformat()
+            )
+            iso_dt = to_utc_iso(dt)
         except (ValueError, TypeError):
-            iso_dt = raw_dt
+            iso_dt = normalize_timestamp(raw_dt) if raw_dt else raw_dt
 
         user = s.get("user") or {}
         uid = str(user.get("id", ""))

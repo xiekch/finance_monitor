@@ -1,11 +1,11 @@
 import logging
-from datetime import datetime
 from typing import Any
 
 from steps.base import Step
 from models.messages import AIBriefingMessage
 from clients.llm_client import BriefingInput, build_morning_llm_client
 from config.morning_briefing import MORNING_BRIEFING_CONFIG
+from utils.time_util import utc_now_iso
 
 
 class MorningAIStep(Step):
@@ -44,7 +44,7 @@ class MorningAIStep(Step):
                 },
                 "degraded": False,
                 "error": None,
-                "created_at": datetime.now().isoformat(),
+                "created_at": utc_now_iso(),
                 "window_hours": window_hours,
             }
         except Exception as e:
@@ -63,7 +63,7 @@ class MorningAIStep(Step):
                 "stats": {},
                 "degraded": True,
                 "error": str(e),
-                "created_at": datetime.now().isoformat(),
+                "created_at": utc_now_iso(),
                 "window_hours": window_hours,
             }
 

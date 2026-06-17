@@ -7,6 +7,7 @@ from typing import List, Optional, Protocol
 import requests
 
 from models.social import SocialPost
+from utils.time_util import normalize_timestamp, to_utc_iso
 
 
 class SocialClient(Protocol):
@@ -71,7 +72,9 @@ class SocialDataClient:
             author=t.get("user", {}).get("screen_name", ""),
             author_name=t.get("user", {}).get("name", ""),
             text=t.get("full_text") or t.get("text") or "",
-            created_at=t.get("tweet_created_at") or t.get("created_at") or "",
+            created_at=normalize_timestamp(
+                t.get("tweet_created_at") or t.get("created_at") or ""
+            ),
             url=t.get("url") or f"https://x.com/i/status/{t.get('id_str')}",
             is_retweet=bool(t.get("retweeted_status")),
             referenced_url=(t.get("retweeted_status") or {}).get("url"),
@@ -227,9 +230,10 @@ class TwitterApiIoClient:
         raw_dt = t.get("createdAt", "")
         try:
             # twitterapi.io 返回 "Mon Jun 01 04:58:38 +0000 2026" 格式
-            iso_dt = datetime.strptime(raw_dt, "%a %b %d %H:%M:%S %z %Y").isoformat()
+            dt = datetime.strptime(raw_dt, "%a %b %d %H:%M:%S %z %Y")
+            iso_dt = to_utc_iso(dt)
         except (ValueError, TypeError):
-            iso_dt = raw_dt
+            iso_dt = normalize_timestamp(raw_dt) if raw_dt else raw_dt
         author = t.get("author") or {}
         # 拼接引用 / 转推的原文上下文，否则 LLM 只看到 "True/Yes/RT @x: 截断..." 抓不到信息
         text, is_retweet, referenced_url = _compose_text_with_context(t)
@@ -264,6 +268,8 @@ class TwitterApiIoClient:
         # 时间过滤通过 advanced-search 操作符注入 query 字符串
         # https://github.com/igorbrigadir/twitter-advanced-search
         if since:
+            if since.tzinfo is None:
+                since = since.astimezone()
             since_ts = int(since.timestamp())
             query = f"{query} since_time:{since_ts}"
 

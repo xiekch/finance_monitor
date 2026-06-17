@@ -1,6 +1,5 @@
 import json
 import logging
-from datetime import datetime
 from typing import Any
 
 from steps.base import Step
@@ -9,6 +8,7 @@ from models.market import PriceData
 from models.social import SocialPost, Briefing
 from storage.market_db import MarketDataDB
 from storage.social_store import SocialPostStore
+from utils.time_util import utc_now_iso
 
 
 class StorageStep(Step):
@@ -66,7 +66,7 @@ class StorageStep(Step):
     def _store_briefing(self, message: BaseMessage):
         p = message.payload
         briefing = Briefing(
-            created_at=p.get("created_at") or datetime.now().isoformat(),
+            created_at=p.get("created_at") or utc_now_iso(),
             window_hours=p.get("window_hours", 0),
             source_post_ids=p.get("source_post_ids", []),
             markdown=p.get("markdown", ""),

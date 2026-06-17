@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, List, Optional, Tuple
 
 from steps.base import Step
@@ -13,6 +13,7 @@ from fetchers.futures_fetcher import FuturesFetcher
 from config.settings import API_CONFIG
 from config.monitor import MONITOR_CONFIG
 from config.morning_briefing import MORNING_BRIEFING_CONFIG
+from utils.time_util import to_utc_iso, window_since
 
 
 _GROUPS: List[Tuple[str, Tuple[str, ...]]] = [
@@ -41,12 +42,12 @@ class FetchMorningData(Step):
 
     async def process(self, data: Any = None) -> dict | None:
         window_hours = self.cfg["window_hours"]
-        since = datetime.now() - timedelta(hours=window_hours)
+        since = window_since(window_hours)
 
         posts = self.social_store.get_posts_since(since)
         logging.info(
             f"[{self.name}] 读取到 {len(posts)} 条社交帖子 "
-            f"(window={window_hours}h, since={since.isoformat()})"
+            f"(window={window_hours}h, since={to_utc_iso(since)})"
         )
 
         market_block = await self._build_market_block()

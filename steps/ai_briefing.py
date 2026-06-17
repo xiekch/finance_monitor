@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 from typing import Any
 
 from steps.base import Step
@@ -7,6 +6,7 @@ from models.messages import SocialPostBatchMessage, AIBriefingMessage
 from models.social import SocialPost
 from clients.llm_client import LLMClient, BriefingInput, build_default_llm_client
 from config.social import SOCIAL_CONFIG
+from utils.time_util import utc_now_iso
 
 
 class AIBriefingStep(Step):
@@ -46,7 +46,7 @@ class AIBriefingStep(Step):
                 },
                 "degraded": False,
                 "error": None,
-                "created_at": datetime.now().isoformat(),
+                "created_at": utc_now_iso(),
                 "window_hours": bi.window_hours,
             }
         except Exception as e:
@@ -65,7 +65,7 @@ class AIBriefingStep(Step):
                 "stats": {},
                 "degraded": True,
                 "error": str(e),
-                "created_at": datetime.now().isoformat(),
+                "created_at": utc_now_iso(),
                 "window_hours": SOCIAL_CONFIG["window_hours"],
             }
 

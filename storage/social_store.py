@@ -8,6 +8,7 @@ from typing import List, Optional
 
 from config.settings import DATABASE_CONFIG
 from models.social import SocialPost, Briefing
+from utils.time_util import normalize_timestamp, to_utc_iso, utc_now_iso
 
 
 _SCHEMA_VERSION = 3
@@ -130,10 +131,11 @@ class SocialPostStore:
         """INSERT OR IGNORE，返回实际新增条数。"""
         if not posts:
             return 0
-        now_iso = datetime.now().isoformat()
+        now_iso = utc_now_iso()
         rows = [
             (p.platform, p.post_id, p.author, p.author_name, p.text,
-             p.created_at, p.url, 1 if p.is_retweet else 0,
+             normalize_timestamp(p.created_at) if p.created_at else p.created_at,
+             p.url, 1 if p.is_retweet else 0,
              p.referenced_url, now_iso)
             for p in posts
         ]
@@ -178,7 +180,7 @@ class SocialPostStore:
         self, since: datetime, platform: Optional[str] = None,
     ) -> List[SocialPost]:
         """返回 created_at >= since 的帖子，按 created_at 正序。"""
-        since_iso = since.isoformat()
+        since_iso = to_utc_iso(since)
         with self._lock, self._conn() as conn:
             cur = conn.cursor()
             if platform:

@@ -3,6 +3,7 @@ from typing import Any
 
 from steps.base import Step
 from models.messages import MarketBriefingMessage
+from utils.time_util import utc_now_iso
 
 
 class MarketBriefingStep(Step):
@@ -23,6 +24,6 @@ class MarketBriefingStep(Step):
 
         payload = {
             "markdown": markdown,
-            "created_at": datetime.now().isoformat(),
+            "created_at": utc_now_iso(),
         }
         return MarketBriefingMessage(payload=payload, source=self.name)
