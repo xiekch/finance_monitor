@@ -55,6 +55,7 @@ Task = Step | Step | Step | ...
 ├── infra/                  # trading_hours
 ├── clients/                # llm_client、social_client（外部 API 封装）
 ├── storage/                # market_db、social_store（SQLite 持久化）
+├── utils/                  # time_util 等通用工具
 ├── fetchers/               # 数据抓取（yfinance / binance / 股票接口）
 ├── analyzers/              # 波动率分析、threshold_manager
 └── notifiers/              # 企业微信通知
@@ -129,12 +130,12 @@ python3 -m venv .venv
 
 ## X 推文 AI 简报
 
-每天按 cron 从配置的 X 账号白名单拉取增量推文 → 调 LLM 聚合成 markdown 简报 → 通过企微 webhook 推送；原始推文与简报均落 SQLite。
+按 cron 从白名单账号拉取推文 → LLM 聚合成 markdown 简报 → 企微推送。调度见 `config/schedule.py`，抓取与 LLM 参数见 `config/social.py`。简报内容仅来自本次 API 拉取；原始推文与简报均落 SQLite（供早报等其它 task 读取）。
 
 ### 启动
 
 ```bash
-# 单独跑（调度时间见 config/schedule.py）
+# 单独跑
 python app.py -t x_briefing
 
 # X 简报 + 微博简报（独立 task）
@@ -160,22 +161,21 @@ TWITTERAPI_IO_KEY=...            # twitterapi.io 的 key（默认 X 数据源；
 主要字段：
 
 - `whitelist`：关注的 X 账号列表（不带 `@`）
-- `cron_hours`：简报时段（仅供参考，实际调度由 `config/schedule.py:TASK_SCHEDULE` 控制）
-- `window_hours`：每次简报覆盖的回看窗口（仅作为 LLM prompt 上下文，不影响 since_id 增量）
-- `prompt_template` / `user_prompt_extra`：LLM prompt，可调
-- `social_provider`：第三方 X 聚合服务，默认 `twitterapi_io`；可切 `socialdata`
-- `llm_provider`：LLM，默认 `tongyi`（DashScope via OpenAI 兼容协议 + `langchain_openai.ChatOpenAI`）
-- `push_max_chars`：推送给企微的字符上限（4096 字节内安全冗余）
+- `window_hours`：回看窗口（小时）；search 模式下同时用于 API 时间过滤与 LLM prompt
+- `social_provider.fetch_mode`：`"search"`（合并 query）或 `"timeline"`（逐账号增量）
+- `social_provider.search_limit`：search 模式拉取上限
+- `prompt_template`：LLM prompt，可调
+- `social_provider` / `llm_provider`：数据源与模型配置
+- `push_max_chars`：企微推送字符上限
 
 ### 数据落地（共用 `market_data.db`）
 
-- `social_posts` 表：抓到的推文，`post_id` 为主键自动幂等去重
+- `social_posts` 表：抓到的推文，`(platform, post_id)` 联合主键幂等去重；`created_at` / `fetched_at` 均为 UTC ISO8601
 - `briefings` 表：每次简报，含 markdown / sections / token 用量；`degraded=1` 表示 LLM 失败时的降级简报
 
 ### 失败行为
 
-- 单账号抓取失败：跳过该账号，记 warning，其他账号继续
-- 全部账号失败 / 拉到 0 条：不发简报消息，下次 cron 重试
+- API 失败或拉到 0 条：不发简报，下次 cron 重试
 - LLM 失败：发一条降级简报到企微（说明哪几个账号收到多少条 + 错误信息）+ `briefings` 表记 `degraded=1`
 - 推送失败：仅记 error log；简报已落库，可查询 `briefings` 表手工补推
 
