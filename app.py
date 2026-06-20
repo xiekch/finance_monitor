@@ -2,90 +2,19 @@ import logging
 import signal
 import sys
 import time
-import os
-from typing import Callable, Optional
 
-from apscheduler.triggers.base import BaseTrigger
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
+from steps.base import TaskRunner
 
-
-from steps.base import Step, Task, TaskRunner, Fork
-from steps.fetch_astock import FetchAStock
-from steps.fetch_usstock import FetchUSStock
-from steps.fetch_crypto import FetchCrypto
-from steps.fetch_futures import FetchFutures
-from steps.fetch_x_posts import FetchXPosts
-from steps.fetch_weibo_posts import FetchWeiboPosts
-from steps.fetch_morning_data import FetchMorningData
-from steps.morning_ai import MorningAIStep
-from steps.market_briefing import MarketBriefingStep
-from steps.storage import StorageStep
-from steps.volatility import VolatilityStep
-from steps.ai_briefing import AIBriefingStep
-from steps.notify import NotifyStep
-from steps.morning_notify import MorningNotifyStep
-from steps.publish_mp import PublishMPStep
-
-from config.schedule import TASK_SCHEDULE
 from config.settings import WECOM_CONFIG
 from config.social import assert_social_env_ready
-
-
-_TRIGGER_TYPES = {
-    "cron": CronTrigger,
-    "interval": IntervalTrigger,
-}
-
-
-def build_trigger(spec: Optional[dict]) -> Optional[BaseTrigger]:
-    if spec is None:
-        return None
-    try:
-        trigger_cls = _TRIGGER_TYPES[spec["type"]]
-    except KeyError as e:
-        raise ValueError(
-            f"未知 trigger 类型: {spec.get('type')}; 可选: {sorted(_TRIGGER_TYPES)}"
-        ) from e
-    return trigger_cls(**spec.get("kwargs", {}))
-
-
-# ── Task 注册表 ──────────────────────────────────────────────
-_PRICE_FETCH = {"astock": FetchAStock, "usstock": FetchUSStock, "crypto": FetchCrypto, "futures": FetchFutures}
-
-TASK_REGISTRY: dict[str, Callable[[], Step]] = {
-    **{f"{m}_{f}": (lambda m=m, f=f: _PRICE_FETCH[m](f) | StorageStep() | VolatilityStep() | NotifyStep())
-       for m in _PRICE_FETCH for f in ("minute", "daily", "weekly")},
-    "x_briefing":       lambda: FetchXPosts() | StorageStep() | AIBriefingStep() | Fork(StorageStep(), NotifyStep()),
-    "weibo_briefing":   lambda: FetchWeiboPosts() | StorageStep() | AIBriefingStep() | Fork(StorageStep(), NotifyStep()),
-    "market_briefing":  lambda: FetchMorningData() | MarketBriefingStep() | MorningNotifyStep(),
-    "morning_briefing": lambda: FetchMorningData() | MorningAIStep() | Fork(StorageStep(), MorningNotifyStep(), PublishMPStep()),
-}
-
-TASK_KEYS: list[str] = list(TASK_REGISTRY)
-
-DEFAULT_TASKS: list[str] = [
-    "x_briefing", "market_briefing", "morning_briefing",
-]
-
-
-def build_tasks(
-    task_keys: list[str],
-    run_immediately: bool = True,
-    ignore_schedule: bool = False,
-) -> list[Task]:
-    tasks: list[Task] = []
-    for key in task_keys:
-        if key not in TASK_REGISTRY:
-            continue
-        tasks.append(Task(
-            name=key,
-            chain=TASK_REGISTRY[key](),
-            trigger=build_trigger(TASK_SCHEDULE.get(key)),
-            run_immediately=run_immediately,
-            ignore_schedule=ignore_schedule,
-        ))
-    return tasks
+from tasks import (
+    TASK_KEYS,
+    TASK_GROUPS,
+    TASK_GROUP_KEYS,
+    DEFAULT_TASKS,
+    expand_task_keys,
+    build_tasks,
+)
 
 
 class TaskApp:
@@ -109,12 +38,15 @@ class TaskApp:
         task_keys: list[str],
         run_immediately: bool = True,
         ignore_schedule: bool = False,
+        sequential: bool = True,
     ):
         welcome = f"\n{'=' * 50}\n启动 Task 编排市场监控系统\n{'=' * 50}"
         logging.info(welcome)
-        print(f"运行模式: tasks={task_keys}, 立即执行={run_immediately}, 忽略调度={ignore_schedule}")
+        print(
+            f"运行模式: tasks={task_keys}, 立即执行={run_immediately}, "
+            f"忽略调度={ignore_schedule}, 串行={sequential}"
+        )
 
-        # 社交 env 检查
         check_weibo = "weibo_briefing" in task_keys
         if "x_briefing" in task_keys or check_weibo:
             assert_social_env_ready(check_weibo=check_weibo)
@@ -127,7 +59,9 @@ class TaskApp:
         for t in tasks:
             self.runner.register(t)
 
-        self.runner.start()
+        self.runner.start(
+            sequential=sequential and run_immediately,
+        )
 
         task_names = [t.name for t in tasks]
         logging.info(f"已启动 Task: {task_names}")
@@ -151,9 +85,10 @@ class TaskApp:
         task_keys: list[str],
         run_immediately: bool = True,
         ignore_schedule: bool = False,
+        sequential: bool = True,
     ):
         try:
-            self.start(task_keys, run_immediately, ignore_schedule)
+            self.start(task_keys, run_immediately, ignore_schedule, sequential)
 
             if ignore_schedule:
                 print("忽略调度模式，Task 已立即执行一次；保持运行等待处理完成，按 Ctrl+C 退出。")
@@ -186,11 +121,15 @@ def parse_args(argv: list[str] | None = None):
         help="只执行一次，忽略调度",
     )
     parser.add_argument(
+        "--parallel", action="store_true", default=False,
+        help="立即执行时并行运行多个 task（默认按 task 列表顺序串行）",
+    )
+    parser.add_argument(
         "-t", "--tasks",
         type=str,
         default=None,
         dest="tasks_arg",
-        help=f"逗号分隔的 task 短名，可选: {sorted(TASK_KEYS)}; 不传则使用默认 {DEFAULT_TASKS}",
+        help="逗号分隔的 task 短名或复合组名；不传则使用默认 briefings 组",
     )
     parser.add_argument(
         "--webhook",
@@ -216,21 +155,15 @@ def parse_args(argv: list[str] | None = None):
         if not keys:
             parser.error("--tasks 不能为空")
 
-        valid = set(TASK_KEYS)
+        valid = set(TASK_KEYS) | set(TASK_GROUP_KEYS)
         unknown = sorted(set(keys) - valid)
         if unknown:
-            parser.error(f"未知 task: {unknown}; 可选: {sorted(TASK_KEYS)}")
+            parser.error(
+                f"未知 task: {unknown}; 可选 task: {sorted(TASK_KEYS)}; "
+                f"复合组: {sorted(TASK_GROUP_KEYS)}"
+            )
 
-        seen = set()
-        deduped = []
-        for k in keys:
-            if k in seen:
-                continue
-            seen.add(k)
-            deduped.append(k)
-        if len(deduped) != len(keys):
-            logging.warning(f"tasks 中存在重复 key，已去重: {keys} -> {deduped}")
-        args.task_keys = deduped
+        args.task_keys = expand_task_keys(keys)
 
     return args
 
@@ -242,6 +175,9 @@ if __name__ == "__main__":
         print("可选 task:")
         for key in TASK_KEYS:
             print(f"  {key}")
+        print("\n复合 task 组（展开为多个 task；立即执行默认串行，--parallel 可并行）:")
+        for name, members in TASK_GROUPS.items():
+            print(f"  {name} -> {', '.join(members)}")
         sys.exit(0)
 
     if args.webhook:
@@ -252,4 +188,5 @@ if __name__ == "__main__":
         task_keys=args.task_keys,
         run_immediately=not args.no_immediate,
         ignore_schedule=args.once,
+        sequential=not args.parallel,
     )

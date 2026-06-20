@@ -42,7 +42,8 @@ Task = Step | Step | Step | ...
 
 ```
 .
-├── app.py                  # 应用入口 / Task 注册表 / CLI
+├── app.py                  # 应用入口 / CLI
+├── tasks.py                # Task 注册表、复合组、build_tasks
 ├── config/                 # settings.py（API/DB）、schedule.py（调度）、monitor.py（标的）、social.py（X+LLM）
 ├── models/                 # messages、market、social 数据类
 ├── steps/                  # 管道步骤
@@ -107,46 +108,68 @@ python3 -m venv .venv
 ### 启动
 
 ```bash
-# 正常调度模式：常驻运行，按 cron 触发（默认 task：usstock_daily + crypto_daily + x_briefing + market_briefing + morning_briefing）
+# 默认：briefings 组（x_briefing → market_briefing → morning_briefing），立即串行执行 + cron 调度
 .venv/bin/python3 app.py
 
-# 启动时不立即执行一次
+# 完整早报链路：日 K 行情 → 三套简报，串行跑一遍后按 cron 常驻
+.venv/bin/python3 app.py -t morning_pack
+
+# 只跑一遍完整链路，不注册 cron（跑完可 Ctrl+C）
+.venv/bin/python3 app.py -t morning_pack --once
+
+# 不立即执行，仅等 cron 触发
 .venv/bin/python3 app.py --no-immediate
 
-# 只执行一次后保持运行等待处理完成
-.venv/bin/python3 app.py --once
+# 多个 task 并行立即执行（默认是串行）
+.venv/bin/python3 app.py -t usstock_minute,crypto_minute --parallel
 
-# 只启动指定 task（逗号分隔）
-.venv/bin/python3 app.py -t usstock_minute,crypto_minute
+# 指定企微 webhook（可多次指定，覆盖 .env）
+.venv/bin/python3 app.py --webhook "https://...?key=aaa"
 
-# 指定企微推送 webhook（可多次指定，覆盖 .env 中的 WECOM_WEBHOOK_URL）
-.venv/bin/python3 app.py --webhook "https://...?key=aaa" --webhook "https://...?key=bbb"
-
-# 列出所有可选 task 后退出
+# 列出所有 task 与复合组
 .venv/bin/python3 app.py --list-tasks
 ```
+
+### 运行示例
+
+**行情监控**
+
+```bash
+# 分钟级监控（A 股 + 加密货币）
+.venv/bin/python3 app.py -t astock_minute,crypto_minute
+
+# 日 K 更新
+.venv/bin/python3 app.py -t usstock_daily,crypto_daily,astock_daily,futures_daily --once
+```
+
+**简报 / 早报**
+
+```bash
+# X 推文 AI 简报（拉取 → LLM → 企微）
+.venv/bin/python3 app.py -t x_briefing --once
+
+# 三套简报：X 简报 → 行情早报 → 公众号早报
+.venv/bin/python3 app.py -t briefings --once
+
+# 完整链路：先更新日 K，再三套简报（推荐手动触发早报时用）
+.venv/bin/python3 app.py -t morning_pack --once
+
+# 单独跑公众号早报（依赖 social_posts 已有数据）
+.venv/bin/python3 app.py -t morning_briefing --once
+```
+
+**复合组说明**
+
+| 组名 | 展开为 |
+|------|--------|
+| `briefings` | x_briefing → market_briefing → morning_briefing |
+| `morning_pack` | 四个 `*_daily` + briefings 全套 |
 
 日志写入 `app.log` 并同时打印到控制台。
 
 ## X 推文 AI 简报
 
 按 cron 从白名单账号拉取推文 → LLM 聚合成 markdown 简报 → 企微推送。调度见 `config/schedule.py`，抓取与 LLM 参数见 `config/social.py`。简报内容仅来自本次 API 拉取；原始推文与简报均落 SQLite（供早报等其它 task 读取）。
-
-### 启动
-
-```bash
-# 单独跑
-python app.py -t x_briefing
-
-# X 简报 + 微博简报（独立 task）
-python app.py -t x_briefing,weibo_briefing
-
-# 与行情 task 一起跑
-python app.py -t crypto_daily,usstock_daily,x_briefing
-
-# 立即跑一次
-python app.py -t x_briefing --once
-```
 
 ### 环境变量（追加到 `.env`）
 
@@ -179,10 +202,23 @@ TWITTERAPI_IO_KEY=...            # twitterapi.io 的 key（默认 X 数据源；
 - LLM 失败：发一条降级简报到企微（说明哪几个账号收到多少条 + 错误信息）+ `briefings` 表记 `degraded=1`
 - 推送失败：仅记 error log；简报已落库，可查询 `briefings` 表手工补推
 
+## 公众号 AI 早报
+
+`morning_briefing` task：读库中社交帖 + 监控标的日 K → LLM 合成 → 企微推送 + 微信公众号发布。配置见 `config/morning_briefing.py`。运行命令见上方「运行示例」。
+
+### 环境变量（追加到 `.env`）
+
+```env
+WECHAT_MP_APP_ID=...             # 公众号 AppID
+WECHAT_MP_APP_SECRET=...         # 公众号 Secret
+WECHAT_MP_THUMB_MEDIA_ID=...     # 封面图 media_id（草稿必填）
+MORNING_WEBHOOK_URL=...          # 可选，早报专用企微 webhook
+```
+
 ## 扩展
 
 - **新增数据链路**：
   1. 在 `steps/` 下实现新的 Step（继承 `Step`，实现 `async process(data)`）
-  2. 在 `app.py` 中用 `|` 语法组合成 Task 并注册
+  2. 在 `tasks.py` 的 `TASK_REGISTRY` 中用 `|` 语法组合成 Task 并注册
   3. 在 `config/schedule.py:TASK_SCHEDULE` 加该 task key 的触发器配置
 - **新增数据源**：继承 `fetchers/base_fetcher.py:BaseFetcher`

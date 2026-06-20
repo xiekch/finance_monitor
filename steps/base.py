@@ -148,17 +148,24 @@ class TaskRunner:
         finally:
             loop.close()
 
-    def start(self):
+    def start(self, sequential: bool = True):
         self.is_running = True
 
-        for name, task in self.tasks.items():
-            if task.run_immediately:
-                logging.info(f"[TaskRunner] 立即执行 {name}")
-                thread = threading.Thread(
-                    target=self._run_task_sync, args=(name,), daemon=True,
-                )
-                thread.start()
+        immediate = [name for name, task in self.tasks.items() if task.run_immediately]
+        if immediate:
+            if sequential:
+                logging.info(f"[TaskRunner] 按序立即执行: {immediate}")
+                for name in immediate:
+                    self._run_task_sync(name)
+            else:
+                for name in immediate:
+                    logging.info(f"[TaskRunner] 立即执行 {name}")
+                    thread = threading.Thread(
+                        target=self._run_task_sync, args=(name,), daemon=True,
+                    )
+                    thread.start()
 
+        for name, task in self.tasks.items():
             if not task.ignore_schedule and task.trigger:
                 self.scheduler.add_job(
                     self._run_task_sync,

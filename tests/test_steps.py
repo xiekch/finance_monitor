@@ -171,7 +171,7 @@ class TestTask:
 
 class TestAppIntegration:
     def test_build_tasks_price(self):
-        from app import build_tasks
+        from tasks import build_tasks
         tasks = build_tasks(["astock_daily"], run_immediately=False, ignore_schedule=True)
         assert len(tasks) == 1
         assert tasks[0].name == "astock_daily"
@@ -179,20 +179,21 @@ class TestAppIntegration:
         assert step_names == ["FetchAStock", "StorageStep", "VolatilityStep", "NotifyStep"]
 
     def test_build_tasks_social_independent(self):
-        from app import build_tasks
+        from tasks import build_tasks
         tasks = build_tasks(["x_briefing", "weibo_briefing"], run_immediately=False, ignore_schedule=True)
         names = sorted(t.name for t in tasks)
         assert names == ["weibo_briefing", "x_briefing"]
 
     def test_build_tasks_all_types(self):
-        from app import build_tasks
+        from tasks import build_tasks
         keys = ["crypto_daily", "x_briefing", "market_briefing", "morning_briefing"]
         tasks = build_tasks(keys, run_immediately=False, ignore_schedule=True)
         names = sorted(t.name for t in tasks)
         assert names == ["crypto_daily", "market_briefing", "morning_briefing", "x_briefing"]
 
     def test_parse_args_default(self):
-        from app import parse_args, DEFAULT_TASKS
+        from app import parse_args
+        from tasks import DEFAULT_TASKS
         args = parse_args([])
         assert args.task_keys == DEFAULT_TASKS
 
