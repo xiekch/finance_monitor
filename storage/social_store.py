@@ -3,7 +3,7 @@ import json
 import logging
 import sqlite3
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from config.settings import DATABASE_CONFIG
@@ -175,6 +175,32 @@ class SocialPostStore:
                 """, (platform, author))
             row = cur.fetchone()
             return row[0] if row else None
+
+    def get_latest_created_at(
+        self, platform: str = "x", authors: Optional[List[str]] = None,
+    ) -> Optional[datetime]:
+        """返回库中最新推文的 created_at（UTC aware）；无数据时返回 None。"""
+        with self._lock, self._conn() as conn:
+            cur = conn.cursor()
+            if authors:
+                placeholders = ",".join("?" * len(authors))
+                cur.execute(
+                    f"""SELECT MAX(created_at) FROM social_posts
+                        WHERE platform = ? AND author IN ({placeholders})""",
+                    (platform, *authors),
+                )
+            else:
+                cur.execute(
+                    "SELECT MAX(created_at) FROM social_posts WHERE platform = ?",
+                    (platform,),
+                )
+            row = cur.fetchone()
+            if not row or not row[0]:
+                return None
+            dt = datetime.fromisoformat(row[0].replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc)
 
     def get_posts_since(
         self, since: datetime, platform: Optional[str] = None,

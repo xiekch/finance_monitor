@@ -10,7 +10,7 @@ SOCIAL_CONFIG = {
     "cron_hours": "8",
     # 触发分钟，避开整点全网 API 高峰；保留 0~59 整数（apscheduler CronTrigger.minute 语义）
     "cron_minute": 50,
-    # 每次简报覆盖的回看窗口（仅作为 LLM prompt 上下文，不限制 since_id 增量）
+    # 简报回看窗口下限（小时）：search 模式 since_time = max(now-window_hours, 库内最新 created_at)
     "window_hours": 24,
 
     # 关注的 X 账号白名单（不带 @）
