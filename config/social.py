@@ -5,6 +5,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# X 简报专用企微 webhook（可选，逗号分隔）；未配置时 fallback 到 WECOM_CONFIG
+X_BRIEFING_WEBHOOK_URLS: list[str] = [
+    u.strip() for u in os.getenv('X_BRIEFING_WEBHOOK_URL', '').split(',') if u.strip()
+]
+
 SOCIAL_CONFIG = {
     # 简报 cron 时段（小时，逗号分隔）
     "cron_hours": "8",

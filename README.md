@@ -177,6 +177,7 @@ python3 -m venv .venv
 DASHSCOPE_API_KEY=...            # 阿里百炼 / 通义千问 API key
 TWITTERAPI_IO_KEY=...            # twitterapi.io 的 key（默认 X 数据源；
                                  # 如改用 socialdata.tools 则配 SOCIALDATA_API_KEY）
+X_BRIEFING_WEBHOOK_URL=...       # 可选，X 简报专用企微 webhook（逗号分隔多个）
 ```
 
 ### 配置位置 `config/social.py`

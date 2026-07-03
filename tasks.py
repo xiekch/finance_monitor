@@ -21,8 +21,10 @@ from steps.ai_briefing import AIBriefingStep
 from steps.notify import NotifyStep
 from steps.morning_notify import MorningNotifyStep
 from steps.publish_mp import PublishMPStep
+from notifiers.wechat_notifier import WeChatNotifier
 
 from config.schedule import TASK_SCHEDULE
+from config.social import X_BRIEFING_WEBHOOK_URLS
 
 _TRIGGER_TYPES = {
     "cron": CronTrigger,
@@ -59,7 +61,8 @@ TASK_REGISTRY: dict[str, Callable[[], Step]] = {
         for f in ("minute", "daily", "weekly")
     },
     "x_briefing": (
-        lambda: FetchXPosts() | StorageStep() | AIBriefingStep() | Fork(StorageStep(), NotifyStep())
+        lambda: FetchXPosts() | StorageStep() | AIBriefingStep()
+        | Fork(StorageStep(), NotifyStep(WeChatNotifier(X_BRIEFING_WEBHOOK_URLS or None)))
     ),
     "weibo_briefing": (
         lambda: FetchWeiboPosts() | StorageStep() | AIBriefingStep() | Fork(StorageStep(), NotifyStep())
