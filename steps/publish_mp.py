@@ -1,11 +1,10 @@
 import logging
 from datetime import datetime
-from typing import Any
 
 import markdown
 
 from steps.base import Step
-from models.messages import AIBriefingMessage
+from models.social import Briefing
 from clients.wechat_mp_client import WechatMPClient
 
 
@@ -20,22 +19,20 @@ class PublishMPStep(Step):
         self.client = WechatMPClient()
         self._md = markdown.Markdown(extensions=["tables", "fenced_code"])
 
-    async def process(self, data: Any) -> None:
-        if data is None:
-            return None
-
+    async def process(self, items: list) -> list:
         if not self.client.configured:
             logging.warning(f"[{self.name}] 未配置 WECHAT_MP_APP_ID/SECRET，跳过公众号发布")
-            return None
+            return []
 
-        if not isinstance(data, AIBriefingMessage):
-            logging.warning(f"[{self.name}] 不支持的消息类型: {type(data).__name__}，跳过")
-            return None
+        briefing = next((x for x in items if isinstance(x, Briefing)), None)
+        if briefing is None:
+            logging.warning(f"[{self.name}] 未收到 Briefing，跳过")
+            return []
 
-        md_text = data.payload.get("markdown", "")
+        md_text = briefing.markdown
         if not md_text:
             logging.warning(f"[{self.name}] markdown 内容为空，跳过")
-            return None
+            return []
 
         title = f"AI 早报 {datetime.now().strftime('%Y-%m-%d')}"
         content_html = self._md.convert(md_text)
@@ -51,4 +48,4 @@ class PublishMPStep(Step):
         except Exception as e:
             logging.error(f"[{self.name}] 公众号发布失败: {e}", exc_info=True)
 
-        return None
+        return []

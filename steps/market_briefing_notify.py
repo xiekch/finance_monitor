@@ -1,8 +1,7 @@
 import logging
-from typing import Any
 
 from steps.notify_base import BaseNotifyStep
-from models.messages import MarketBriefingMessage
+from models.market import MarketBriefing
 from notifiers.wechat_notifier import WeChatNotifier
 from config.morning_briefing import MORNING_WEBHOOK_URLS
 
@@ -16,25 +15,18 @@ class MarketBriefingNotifyStep(BaseNotifyStep):
             name="MarketBriefingNotifyStep",
         )
 
-    async def process(self, data: Any) -> None:
-        if data is None:
-            return None
-
-        items = data if isinstance(data, list) else [data]
+    async def process(self, items: list) -> list:
         for item in items:
-            if isinstance(item, MarketBriefingMessage):
+            if isinstance(item, MarketBriefing):
                 self._send_one(item)
+        return []
 
-        return None
-
-    def _send_one(self, message: MarketBriefingMessage):
-        markdown = message.payload.get("markdown", "")
+    def _send_one(self, briefing: MarketBriefing):
+        markdown = briefing.markdown
         if not markdown:
             logging.warning(f"[{self.name}] 行情早报为空，跳过")
             return
-        hit = message.payload.get("hit_count")
-        total = message.payload.get("row_count")
-        logging.info(f"[{self.name}] 推送行情早报 hit={hit}/{total} chars={len(markdown)}")
+        logging.info(f"[{self.name}] 推送行情早报 chars={len(markdown)}")
         ok = self.notifier.send_text(markdown)
         if ok:
             logging.info(f"[{self.name}] 行情早报推送成功")

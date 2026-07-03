@@ -1,9 +1,9 @@
+import json
 import logging
-from typing import Any
+from typing import List
 
 from steps.base import Step
-from models.messages import SocialPostBatchMessage, AIBriefingMessage
-from models.social import SocialPost
+from models.social import SocialPost, Briefing
 from clients.llm_client import LLMClient, BriefingInput, build_default_llm_client
 from config.social import SOCIAL_CONFIG
 from utils.time_util import utc_now_iso
@@ -12,19 +12,19 @@ from utils.time_util import utc_now_iso
 class AIBriefingStep(Step):
     """从聚合后的社交帖子生成 AI 简报。
 
-    输入：list[SocialPostBatchMessage]（来自 FetchMultiSource）或单个 SocialPostBatchMessage
-    输出：AIBriefingMessage
+    输入：list[SocialPost]（来自 FetchMultiSource 或单平台 fetch 步骤）
+    输出：list[Briefing]
     """
 
     def __init__(self, llm: LLMClient | None = None):
         self.name = "AIBriefingStep"
         self.llm = llm or build_default_llm_client()
 
-    async def process(self, data: Any) -> AIBriefingMessage | None:
-        posts = self._extract_posts(data)
+    async def process(self, items: list) -> List[Briefing]:
+        posts = [x for x in items if isinstance(x, SocialPost)]
         if not posts:
             logging.warning(f"[{self.name}] 无帖子，跳过生成")
-            return None
+            return []
 
         bi = BriefingInput(
             posts=posts,
@@ -34,21 +34,19 @@ class AIBriefingStep(Step):
 
         try:
             result = await self.llm.summarize(bi)
-            payload = {
-                "markdown": result.markdown,
-                "sections": result.sections,
-                "source_post_count": len(posts),
-                "source_post_ids": [p.post_id for p in posts],
-                "stats": {
-                    "model": result.model,
-                    "input_tokens": result.input_tokens,
-                    "output_tokens": result.output_tokens,
-                },
-                "degraded": False,
-                "error": None,
-                "created_at": utc_now_iso(),
-                "window_hours": bi.window_hours,
-            }
+            briefing = Briefing(
+                created_at=utc_now_iso(),
+                window_hours=bi.window_hours,
+                source_post_ids=[p.post_id for p in posts],
+                markdown=result.markdown,
+                sections_json=json.dumps(result.sections),
+                model=result.model,
+                input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens,
+                degraded=False,
+                error=None,
+                source=self.name,
+            )
         except Exception as e:
             logging.error(f"[{self.name}] LLM summarize failed: {e}", exc_info=True)
             md = (
@@ -57,29 +55,18 @@ class AIBriefingStep(Step):
                 f"错误: {e}\n\n"
                 f"原始帖子 ID 已写入 SQLite social_posts 表。"
             )
-            payload = {
-                "markdown": md,
-                "sections": [],
-                "source_post_count": len(posts),
-                "source_post_ids": [p.post_id for p in posts],
-                "stats": {},
-                "degraded": True,
-                "error": str(e),
-                "created_at": utc_now_iso(),
-                "window_hours": SOCIAL_CONFIG["window_hours"],
-            }
+            briefing = Briefing(
+                created_at=utc_now_iso(),
+                window_hours=SOCIAL_CONFIG["window_hours"],
+                source_post_ids=[p.post_id for p in posts],
+                markdown=md,
+                sections_json="[]",
+                model="",
+                input_tokens=0,
+                output_tokens=0,
+                degraded=True,
+                error=str(e),
+                source=self.name,
+            )
 
-        return AIBriefingMessage(payload=payload, source=self.name)
-
-    @staticmethod
-    def _extract_posts(data: Any) -> list[SocialPost]:
-        if data is None:
-            return []
-        items = data if isinstance(data, list) else [data]
-        posts: list[SocialPost] = []
-        for item in items:
-            if isinstance(item, SocialPostBatchMessage):
-                posts.extend(
-                    SocialPost.from_dict(p) for p in item.payload.get("posts", [])
-                )
-        return posts
+        return [briefing]

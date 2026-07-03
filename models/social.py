@@ -25,6 +25,15 @@ class SocialPost:
 
 
 @dataclass
+class MorningData:
+    """早报原料：窗口内的社交帖子 + 已格式化的行情块。"""
+
+    posts: List["SocialPost"]
+    market_block: str
+    window_hours: int
+
+
+@dataclass
 class Briefing:
     created_at: str          # UTC ISO8601
     window_hours: int

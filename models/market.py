@@ -1,6 +1,13 @@
 from datetime import datetime
+from enum import Enum
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
+
+
+class FrequencyType(Enum):
+    MINUTE = "1m"
+    DAILY = "1d"
+    WEEKLY = "1w"
 
 
 @dataclass
@@ -61,3 +68,11 @@ class VolatilityAlert:
     previous_price: float
     timestamp: datetime
     volume: Optional[float] = None
+
+
+@dataclass
+class MarketBriefing:
+    """标的行情早报（已格式化的 markdown）。"""
+
+    markdown: str
+    created_at: str  # UTC ISO8601

@@ -1,9 +1,10 @@
 import logging
-from datetime import datetime
-from typing import Any, List, Optional, Tuple
+from datetime import datetime, timedelta
+from typing import List, Optional, Tuple
 
 from steps.base import Step
 from models.market import PriceData
+from models.social import MorningData
 from storage.market_db import MarketDataDB
 from storage.social_store import SocialPostStore
 from fetchers.astock_fetcher import AStockFetcher
@@ -40,7 +41,7 @@ class FetchMorningData(Step):
         self.futures_fetcher = FuturesFetcher(API_CONFIG)
         self.cfg = MORNING_BRIEFING_CONFIG
 
-    async def process(self, data: Any = None) -> dict | None:
+    async def process(self, items: list = ()) -> List[MorningData]:
         window_hours = self.cfg["window_hours"]
         since = window_since(window_hours)
 
@@ -54,13 +55,13 @@ class FetchMorningData(Step):
 
         if not posts and not market_block.strip():
             logging.warning(f"[{self.name}] 无社交帖子且无行情数据，跳过")
-            return None
+            return []
 
-        return {
-            "posts": posts,
-            "market_block": market_block,
-            "window_hours": window_hours,
-        }
+        return [MorningData(
+            posts=posts,
+            market_block=market_block,
+            window_hours=window_hours,
+        )]
 
     async def _build_market_block(self) -> str:
         watchlist = self._collect_watchlist()

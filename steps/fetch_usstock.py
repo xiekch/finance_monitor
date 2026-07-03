@@ -1,9 +1,9 @@
 import logging
 from datetime import datetime, timedelta
-from typing import Any, List
+from typing import List
 
 from steps.base import Step
-from models.messages import PriceDataMessage, MessageType
+from models.market import PriceData
 from fetchers.us_stock_yf_fetcher import USStockYfFetcher
 from config.settings import API_CONFIG
 from config.monitor import MONITOR_CONFIG
@@ -18,7 +18,7 @@ class FetchUSStock(Step):
         self.name = f"FetchUSStock({frequency})"
         self.fetcher = USStockYfFetcher(API_CONFIG)
 
-    async def process(self, data: Any = None) -> List[PriceDataMessage]:
+    async def process(self, items: list = ()) -> List[PriceData]:
         symbols = self._get_symbols()
         if not symbols:
             logging.warning(f"[{self.name}] 未找到美股标的配置")
@@ -30,51 +30,32 @@ class FetchUSStock(Step):
             return await self._fetch_realtime(symbols)
         return await self._fetch_historical(symbols)
 
-    async def _fetch_realtime(self, symbols: List[dict]) -> List[PriceDataMessage]:
-        messages: List[PriceDataMessage] = []
+    async def _fetch_realtime(self, symbols: List[dict]) -> List[PriceData]:
+        results: List[PriceData] = []
         try:
             stock_data = await self.fetcher.fetch_realtime_data(symbols)
-            for d in stock_data:
-                if not d:
-                    continue
-                messages.append(PriceDataMessage(
-                    payload=d.to_dict(), source=self.name, timestamp=datetime.now(),
-                ))
+            results = [d for d in stock_data if d]
         except Exception as e:
             logging.error(f"[{self.name}] 拉取实时数据失败: {e}")
-        return messages
+        return results
 
-    async def _fetch_historical(self, symbols: List[dict]) -> List[PriceDataMessage]:
-        messages: List[PriceDataMessage] = []
+    async def _fetch_historical(self, symbols: List[dict]) -> List[PriceData]:
+        results: List[PriceData] = []
         fetcher_freq = {'daily': '1d', 'weekly': '1w'}[self.frequency]
-        today = datetime.now().date()
+        window_days = 7 if self.frequency == 'daily' else 14
 
         for sym in symbols:
             symbol = sym['symbol']
             try:
-                if self.frequency == 'daily':
-                    end = datetime.now()
-                    rows = await self.fetcher.fetch_historical_data(
-                        symbol=symbol, frequency=fetcher_freq,
-                        start_date=end - timedelta(days=7), end_date=end,
-                    )
-                else:
-                    end = datetime.now()
-                    rows = await self.fetcher.fetch_historical_data(
-                        symbol=symbol, frequency=fetcher_freq,
-                        start_date=end - timedelta(days=14), end_date=end,
-                    )
-                if not rows:
-                    continue
-                for i, d in enumerate(rows):
-                    mt = MessageType.PRICE_DATA if i == len(rows) - 1 else MessageType.HISTORICAL_PRICE_DATA
-                    messages.append(PriceDataMessage(
-                        payload=d.to_dict(), source=self.name,
-                        timestamp=d.timestamp, message_type=mt,
-                    ))
+                end = datetime.now()
+                rows = await self.fetcher.fetch_historical_data(
+                    symbol=symbol, frequency=fetcher_freq,
+                    start_date=end - timedelta(days=window_days), end_date=end,
+                )
+                results.extend(rows or [])
             except Exception as e:
                 logging.error(f"[{self.name}] {symbol} 失败: {e}")
-        return messages
+        return results
 
     def _get_symbols(self) -> List[dict]:
         us_markets = ('US', 'NASDAQ', 'NYSE')

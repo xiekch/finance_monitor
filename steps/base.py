@@ -18,7 +18,7 @@ import logging
 import threading
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Optional, Sequence
+from typing import Optional
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.base import BaseTrigger
@@ -26,11 +26,15 @@ from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 
 
 class Step(ABC):
-    """管道中的一个处理步骤。"""
+    """管道中的一个处理步骤。
+
+    契约：``process`` 接收上游产出的领域对象列表，返回传给下游的列表；
+    返回空列表则链路终止。链路起点（fetch 步骤）收到的是空列表。
+    """
 
     @abstractmethod
-    async def process(self, data: Any) -> Any:
-        """处理数据并返回结果给下一步。返回 None 则链路终止。"""
+    async def process(self, items: list) -> list:
+        """处理一批领域对象，返回给下一步的列表。空列表表示链路终止。"""
 
     def __or__(self, other: Step) -> Chain:
         left = self.steps if isinstance(self, Chain) else [self]
@@ -44,12 +48,12 @@ class Chain(Step):
     def __init__(self, steps: list[Step]):
         self.steps = steps
 
-    async def process(self, data: Any) -> Any:
+    async def process(self, items: list) -> list:
         for step in self.steps:
-            data = await step.process(data)
-            if data is None:
-                break
-        return data
+            items = await step.process(items)
+            if not items:
+                return []
+        return items
 
 
 class Fork(Step):
@@ -58,13 +62,13 @@ class Fork(Step):
     def __init__(self, *branches: Step):
         self.branches = branches
 
-    async def process(self, data: Any) -> None:
+    async def process(self, items: list) -> list:
         for branch in self.branches:
             try:
-                await branch.process(data)
+                await branch.process(items)
             except Exception as e:
                 logging.error(f"[Fork] branch {branch.__class__.__name__} failed: {e}", exc_info=True)
-        return None
+        return []
 
 
 class FetchMultiSource(Step):
@@ -73,15 +77,10 @@ class FetchMultiSource(Step):
     def __init__(self, *fetchers: Step):
         self.fetchers = fetchers
 
-    async def process(self, data: Any = None) -> list:
-        results = []
+    async def process(self, items: list = ()) -> list:
+        results: list = []
         for f in self.fetchers:
-            result = await f.process(data)
-            if result:
-                if isinstance(result, list):
-                    results.extend(result)
-                else:
-                    results.append(result)
+            results.extend(await f.process([]))
         return results
 
 
@@ -109,7 +108,7 @@ class Task:
         start_time = datetime.now()
         logging.info(f"[Task:{self.name}] 开始执行")
         try:
-            await self.chain.process(None)
+            await self.chain.process([])
         except Exception as e:
             logging.error(f"[Task:{self.name}] 执行失败: {e}", exc_info=True)
         else:

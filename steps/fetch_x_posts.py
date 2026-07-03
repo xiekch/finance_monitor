@@ -1,11 +1,9 @@
 import logging
 from collections import Counter
-from dataclasses import asdict
 from datetime import datetime
-from typing import Any, List
+from typing import List
 
 from steps.base import Step
-from models.messages import SocialPostBatchMessage
 from models.social import SocialPost
 from clients.social_client import SocialClient, build_default_social_client
 from storage.social_store import SocialPostStore
@@ -24,7 +22,7 @@ class FetchXPosts(Step):
         self.social = social or build_default_social_client()
         self.store = store or SocialPostStore()
 
-    async def process(self, data: Any = None) -> SocialPostBatchMessage | None:
+    async def process(self, items: list = ()) -> List[SocialPost]:
         whitelist: List[str] = SOCIAL_CONFIG["whitelist"]
         window_hours: int = SOCIAL_CONFIG["window_hours"]
         fetch_mode: str = SOCIAL_CONFIG["social_provider"].get("fetch_mode", "timeline")
@@ -60,21 +58,14 @@ class FetchXPosts(Step):
 
         if not posts:
             logging.info(f"[{self.name}] no posts, skip")
-            return None
+            return []
 
         posts.sort(key=lambda p: p.created_at)
         by_author = dict(Counter(p.author for p in posts))
         logging.info(
             f"[{self.name}] batch ready: {len(posts)} posts, by_author={by_author}"
         )
-
-        payload = {
-            "posts": [asdict(p) for p in posts],
-            "platform": "x",
-            "window_hours": window_hours,
-            "stats": {"total": len(posts), "new": len(posts), "by_author": by_author},
-        }
-        return SocialPostBatchMessage(payload=payload, source=self.name)
+        return posts
 
     def _resolve_since(self, window_hours: int, whitelist: List[str]) -> datetime:
         """since_time = max(window起点, 库内最新推文时间)，兼顾窗口下限与增量拉取。"""

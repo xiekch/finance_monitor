@@ -6,48 +6,48 @@ import pytest
 from steps.base import Step, Chain, Fork, FetchMultiSource, Task, TaskRunner
 
 
-# ── 测试用 Step 实现 ──
+# ── 测试用 Step 实现（契约：list 进 list 出，空 list 终止链路）──
 
 class AddStep(Step):
     def __init__(self, n: int):
         self.n = n
 
-    async def process(self, data):
-        return (data or 0) + self.n
+    async def process(self, items):
+        return [x + self.n for x in items]
 
 
 class MultiplyStep(Step):
     def __init__(self, n: int):
         self.n = n
 
-    async def process(self, data):
-        return data * self.n
+    async def process(self, items):
+        return [x * self.n for x in items]
 
 
-class NoneStep(Step):
-    async def process(self, data):
-        return None
+class EmptyStep(Step):
+    async def process(self, items):
+        return []
 
 
 class CollectorStep(Step):
     def __init__(self):
         self.received = []
 
-    async def process(self, data):
-        self.received.append(data)
-        return data
+    async def process(self, items):
+        self.received.append(items)
+        return items
 
 
 class FailStep(Step):
-    async def process(self, data):
+    async def process(self, items):
         raise ValueError("boom")
 
 
 class FetchStep(Step):
-    def __init__(self, value):
+    def __init__(self, value: list):
         self.value = value
 
-    async def process(self, data=None):
+    async def process(self, items=()):
         return self.value
 
 
@@ -66,21 +66,21 @@ class TestChain:
 
     def test_pipe_three_steps(self):
         chain = AddStep(1) | MultiplyStep(2) | AddStep(3)
-        result = asyncio.run(chain.process(0))
+        result = asyncio.run(chain.process([0]))
         # (0 + 1) * 2 + 3 = 5
-        assert result == 5
+        assert result == [5]
 
     def test_pipe_two_steps(self):
         chain = AddStep(10) | MultiplyStep(3)
-        result = asyncio.run(chain.process(5))
+        result = asyncio.run(chain.process([5]))
         # (5 + 10) * 3 = 45
-        assert result == 45
+        assert result == [45]
 
-    def test_chain_stops_on_none(self):
+    def test_chain_stops_on_empty(self):
         collector = CollectorStep()
-        chain = AddStep(1) | NoneStep() | collector
-        result = asyncio.run(chain.process(0))
-        assert result is None
+        chain = AddStep(1) | EmptyStep() | collector
+        result = asyncio.run(chain.process([0]))
+        assert result == []
         assert collector.received == []
 
     def test_single_step_pipe(self):
@@ -92,9 +92,9 @@ class TestChain:
         outer = inner | MultiplyStep(3)
         assert isinstance(outer, Chain)
         assert len(outer.steps) == 3
-        result = asyncio.run(outer.process(0))
+        result = asyncio.run(outer.process([0]))
         # (0 + 1 + 2) * 3 = 9
-        assert result == 9
+        assert result == [9]
 
 
 # ── Fork 测试 ──
@@ -104,25 +104,25 @@ class TestFork:
         c1 = CollectorStep()
         c2 = CollectorStep()
         fork = Fork(c1, c2)
-        result = asyncio.run(fork.process("data"))
-        assert result is None
-        assert c1.received == ["data"]
-        assert c2.received == ["data"]
+        result = asyncio.run(fork.process(["data"]))
+        assert result == []
+        assert c1.received == [["data"]]
+        assert c2.received == [["data"]]
 
     def test_fork_isolates_failures(self):
         c1 = CollectorStep()
         fork = Fork(FailStep(), c1)
-        result = asyncio.run(fork.process("data"))
-        assert result is None
-        assert c1.received == ["data"]
+        result = asyncio.run(fork.process(["data"]))
+        assert result == []
+        assert c1.received == [["data"]]
 
     def test_fork_in_chain_terminates(self):
         collector = CollectorStep()
         after = CollectorStep()
         chain = AddStep(1) | Fork(collector) | after
-        result = asyncio.run(chain.process(0))
-        assert result is None
-        assert collector.received == [1]
+        result = asyncio.run(chain.process([0]))
+        assert result == []
+        assert collector.received == [[1]]
         assert after.received == []
 
 
@@ -131,22 +131,17 @@ class TestFork:
 class TestFetchMultiSource:
     def test_aggregates_results(self):
         fms = FetchMultiSource(FetchStep([1, 2]), FetchStep([3]))
-        result = asyncio.run(fms.process(None))
+        result = asyncio.run(fms.process([]))
         assert result == [1, 2, 3]
 
-    def test_skips_none_results(self):
-        fms = FetchMultiSource(FetchStep([1]), FetchStep(None), FetchStep([2]))
-        result = asyncio.run(fms.process(None))
+    def test_skips_empty_results(self):
+        fms = FetchMultiSource(FetchStep([1]), FetchStep([]), FetchStep([2]))
+        result = asyncio.run(fms.process([]))
         assert result == [1, 2]
-
-    def test_single_item_not_list(self):
-        fms = FetchMultiSource(FetchStep("hello"))
-        result = asyncio.run(fms.process(None))
-        assert result == ["hello"]
 
     def test_empty_sources(self):
         fms = FetchMultiSource()
-        result = asyncio.run(fms.process(None))
+        result = asyncio.run(fms.process([]))
         assert result == []
 
 
@@ -155,10 +150,10 @@ class TestFetchMultiSource:
 class TestTask:
     def test_task_runs_chain(self):
         collector = CollectorStep()
-        chain = AddStep(42) | collector
+        chain = FetchStep([42]) | collector
         task = Task(name="test", chain=chain)
         asyncio.run(task.run())
-        assert collector.received == [42]
+        assert collector.received == [[42]]
 
     def test_task_catches_errors(self):
         chain = FailStep()
