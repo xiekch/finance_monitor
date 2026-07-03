@@ -6,7 +6,7 @@
 
     task = Task(
         name="astock_daily",
-        chain=FetchAStock("daily") | StorageStep(db) | VolatilityStep() | NotifyStep(notifier),
+        chain=FetchAStock("daily") | StorageStep(db) | VolatilityStep() | VolatilityNotifyStep(),
         trigger=CronTrigger(hour=9, minute=30),
     )
 """

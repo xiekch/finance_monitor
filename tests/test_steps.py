@@ -176,7 +176,7 @@ class TestAppIntegration:
         assert len(tasks) == 1
         assert tasks[0].name == "astock_daily"
         step_names = [s.__class__.__name__ for s in tasks[0].chain.steps]
-        assert step_names == ["FetchAStock", "StorageStep", "VolatilityStep", "NotifyStep"]
+        assert step_names == ["FetchAStock", "StorageStep", "VolatilityStep", "VolatilityNotifyStep"]
 
     def test_build_tasks_social_independent(self):
         from tasks import build_tasks
