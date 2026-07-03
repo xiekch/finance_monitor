@@ -35,8 +35,15 @@ class FetchXPosts(Step):
             try:
                 since = self._resolve_since(window_hours, whitelist)
                 search_limit = SOCIAL_CONFIG["social_provider"].get("search_limit", 40)
+                since_ids = {
+                    h: sid for h in whitelist
+                    if (sid := self.store.get_latest_post_id(h, platform="x"))
+                }
                 posts = await self.social.search_tweets(
-                    query, limit=search_limit, since=since,
+                    query,
+                    limit=search_limit,
+                    since=since,
+                    since_ids_by_author=since_ids or None,
                 )
             except Exception as e:
                 logging.error(f"[{self.name}] advanced_search failed: {e}", exc_info=True)

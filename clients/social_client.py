@@ -2,7 +2,7 @@
 import logging
 import time
 from datetime import datetime
-from typing import List, Optional, Protocol
+from typing import Dict, List, Optional, Protocol
 
 import requests
 
@@ -251,13 +251,14 @@ class TwitterApiIoClient:
 
     async def search_tweets(
         self, query: str, limit: int = 40, since: datetime | None = None,
+        since_ids_by_author: Dict[str, str] | None = None,
     ) -> List[SocialPost]:
         """advanced_search 端点：用搜索语法一次拉多个账号的推文。
 
         query 示例: "from:elonmusk OR from:sama OR from:karpathy"
         since: 只拉取此时间之后的推文，避免重复拉取旧数据（通过 since_time: 操作符注入 query）
+        since_ids_by_author: 各账号 DB 最新 post_id；Latest 倒序翻页时遇 id<=since_id 即停（同 timeline）
         每次 API 调用 300 credits，每页 20 条；合并多账号为一条 query 减少请求数。
-        首页不满 20 条视为窗口内已拉尽，不再翻页。
         """
         url = f"{self.base_url}/twitter/tweet/advanced_search"
         out: List[SocialPost] = []
@@ -285,22 +286,40 @@ class TwitterApiIoClient:
                 check_status=False,
             )
 
-            tweets = payload.get("tweets") or []
-            out.extend(self._parse(t) for t in tweets)
+            raw_tweets = payload.get("tweets") or []
+            if not raw_tweets:
+                break
+
+            hit_boundary = False
+            fresh_tweets = raw_tweets
+            if since_ids_by_author:
+                fresh_tweets = []
+                for t in raw_tweets:
+                    author = (t.get("author") or {}).get("userName", "")
+                    since_id = since_ids_by_author.get(author)
+                    if since_id and since_id.isdigit():
+                        try:
+                            if int(t["id"]) <= int(since_id):
+                                hit_boundary = True
+                                continue
+                        except (ValueError, TypeError, KeyError):
+                            pass
+                    fresh_tweets.append(t)
+
+            out.extend(self._parse(t) for t in fresh_tweets)
             cursor = payload.get("next_cursor") or ""
             has_next = bool(payload.get("has_next_page"))
             page += 1
 
             logging.info(
-                f"[TwitterApiIoClient] search page {page} +{len(tweets)} "
-                f"(total {len(out)}/{limit} has_next={has_next})"
+                f"[TwitterApiIoClient] search page {page} +{len(fresh_tweets)} "
+                f"(total {len(out)}/{limit} has_next={has_next} hit_seen={hit_boundary} "
+                f"cursor={'yes' if cursor else 'no'})"
             )
 
-            if not has_next or not tweets:
+            if hit_boundary or not has_next:
                 break
-
-            # 首页不满页说明 since_time 窗口内已无更多新推，不必再翻页（每页 300 credits）
-            if page == 1 and len(tweets) < self._PAGE_SIZE:
+            if not cursor:
                 break
 
         result = out[:limit]
