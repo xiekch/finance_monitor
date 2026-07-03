@@ -4,14 +4,15 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 import json
 
+from config.settings import DATABASE_CONFIG
 from models.market import PriceData, VolatilityAlert
 
 
 class MarketDataDB:
     """市场数据数据库管理"""
 
-    def __init__(self, db_path: str = "market_data.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = db_path or DATABASE_CONFIG['path']
         self._init_database()
 
     def _init_database(self):

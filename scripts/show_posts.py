@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from config.settings import DATABASE_CONFIG  # noqa: E402
 
-DB_PATH = ROOT / DATABASE_CONFIG["path"]
+DB_PATH = Path(DATABASE_CONFIG["path"])
 
 
 def _conn():

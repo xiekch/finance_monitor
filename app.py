@@ -5,7 +5,7 @@ import time
 
 from steps.base import TaskRunner
 
-from config.settings import WECOM_CONFIG
+from config.settings import WECOM_CONFIG, LOG_FILE
 from config.social import assert_social_env_ready
 from tasks import (
     TASK_KEYS,
@@ -27,7 +27,7 @@ class TaskApp:
             level=logging.INFO,
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             handlers=[
-                logging.FileHandler("app.log", encoding="utf-8"),
+                logging.FileHandler(LOG_FILE, encoding="utf-8"),
                 logging.StreamHandler(sys.stdout),
             ],
             force=True,

@@ -36,7 +36,7 @@ Task = Step | Step | Step | ...
 └──────────────────────────────────────────────────────────────┘
 ```
 
-每个 Step 的输出是下一个 Step 的输入；返回 `None` 则链路终止。`Fork` 将同一份数据发给多个分支并行处理。
+Step 之间传递领域对象列表（list 进 list 出）；返回空列表则链路终止。`Fork` 将同一份数据发给多个分支分别处理。
 
 ## 目录结构
 
@@ -45,21 +45,25 @@ Task = Step | Step | Step | ...
 ├── app.py                  # 应用入口 / CLI
 ├── tasks.py                # Task 注册表、复合组、build_tasks
 ├── config/                 # settings.py（API/DB）、schedule.py（调度）、monitor.py（标的）、social.py（X+LLM）
-├── models/                 # messages、market、social 数据类
+├── models/                 # market、social 领域模型
 ├── steps/                  # 管道步骤
 │   ├── base.py             # Step / Chain / Fork / FetchMultiSource / Task / TaskRunner
-│   ├── fetch_*.py          # 数据获取步骤（8 个）
+│   ├── fetch/              # 数据获取步骤（行情 4 市场 + X / 微博 / 早报原料）
+│   ├── notify/             # 推送通知步骤（终端）
 │   ├── storage.py          # 透传存储步骤
 │   ├── volatility.py       # 波动分析步骤
 │   ├── ai_briefing.py      # AI 简报生成步骤
-│   └── notify.py           # 推送通知步骤（终端）
-├── infra/                  # trading_hours
-├── clients/                # llm_client、social_client（外部 API 封装）
+│   ├── morning_ai.py       # AI 早报生成步骤
+│   ├── market_briefing.py  # 行情早报格式化步骤
+│   └── publish_mp.py       # 公众号发布步骤（终端）
+├── fetchers/               # 数据抓取实现（yfinance / binance / 股票接口 / trading_hours）
+├── analyzers/              # 波动率分析、threshold_manager
+├── clients/                # 外部服务客户端（LLM / X / 微博 / 企微 webhook / 公众号）
 ├── storage/                # market_db、social_store（SQLite 持久化）
 ├── utils/                  # time_util 等通用工具
-├── fetchers/               # 数据抓取（yfinance / binance / 股票接口）
-├── analyzers/              # 波动率分析、threshold_manager
-└── notifiers/              # 企业微信通知
+├── scripts/                # show_posts 等辅助脚本
+├── data/                   # 运行时数据（SQLite，gitignore）
+└── logs/                   # 运行日志（gitignore）
 ```
 
 ## 环境要求
@@ -72,15 +76,25 @@ Task = Step | Step | Step | ...
 在项目根目录创建 `.env`（已被 `.gitignore` 忽略）：
 
 ```env
-ITICK_TOKEN=your_itick_token
-FINAGE_API_KEY=your_finage_key
-# 多个 webhook 用逗号分隔
-WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=aaa,https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=bbb
+# ── 行情数据 API ──
+ITICK_TOKEN=your_itick_token          # A 股等（config/settings.py）
+FINAGE_API_KEY=your_finage_key        # 美股等
 
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_DB=0
-REDIS_PASSWORD=
+# ── 企业微信（默认 webhook；多个 URL 用逗号分隔）──
+# 用于：波动告警、微博简报；X/早报专用 webhook 未配置时的 fallback
+WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=aaa
+
+# ── X / 微博 AI 简报（config/social.py）──
+TWITTERAPI_IO_KEY=...                 # X 数据源 twitterapi.io（x_briefing 必填）
+DASHSCOPE_API_KEY=...                 # 通义千问 / DashScope（x_briefing、morning_briefing 共用）
+WEIBO_ACCESS_TOKEN=...                # 微博 Open API（weibo_briefing 必填）
+X_BRIEFING_WEBHOOK_URL=...            # 可选，X 简报专用 webhook（逗号分隔多个）
+
+# ── 公众号 AI 早报（config/morning_briefing.py）──
+WECHAT_MP_APP_ID=...
+WECHAT_MP_APP_SECRET=...
+WECHAT_MP_THUMB_MEDIA_ID=...          # 草稿封面 media_id
+MORNING_WEBHOOK_URL=...               # 可选，行情早报 + 晨间 AI 简报专用 webhook
 ```
 
 配置文件按职责拆分：
@@ -165,20 +179,13 @@ python3 -m venv .venv
 | `briefings` | x_briefing → market_briefing → morning_briefing |
 | `morning_pack` | 四个 `*_daily` + briefings 全套 |
 
-日志写入 `app.log` 并同时打印到控制台。
+日志写入 `logs/app.log` 并同时打印到控制台。
 
 ## X 推文 AI 简报
 
 按 cron 从白名单账号拉取推文 → LLM 聚合成 markdown 简报 → 企微推送。调度见 `config/schedule.py`，抓取与 LLM 参数见 `config/social.py`。简报内容仅来自本次 API 拉取；原始推文与简报均落 SQLite（供早报等其它 task 读取）。
 
-### 环境变量（追加到 `.env`）
-
-```env
-DASHSCOPE_API_KEY=...            # 阿里百炼 / 通义千问 API key
-TWITTERAPI_IO_KEY=...            # twitterapi.io 的 key（默认 X 数据源；
-                                 # 如改用 socialdata.tools 则配 SOCIALDATA_API_KEY）
-X_BRIEFING_WEBHOOK_URL=...       # 可选，X 简报专用企微 webhook（逗号分隔多个）
-```
+所需环境变量：`TWITTERAPI_IO_KEY`、`DASHSCOPE_API_KEY`；可选 `X_BRIEFING_WEBHOOK_URL`（见上方配置表）。
 
 ### 配置位置 `config/social.py`
 
@@ -192,7 +199,7 @@ X_BRIEFING_WEBHOOK_URL=...       # 可选，X 简报专用企微 webhook（逗�
 - `social_provider` / `llm_provider`：数据源与模型配置
 - `push_max_chars`：企微推送字符上限
 
-### 数据落地（共用 `market_data.db`）
+### 数据落地（共用 `data/market_data.db`）
 
 - `social_posts` 表：抓到的推文，`(platform, post_id)` 联合主键幂等去重；`created_at` / `fetched_at` 均为 UTC ISO8601
 - `briefings` 表：每次简报，含 markdown / sections / token 用量；`degraded=1` 表示 LLM 失败时的降级简报
@@ -207,19 +214,12 @@ X_BRIEFING_WEBHOOK_URL=...       # 可选，X 简报专用企微 webhook（逗�
 
 `morning_briefing` task：读库中社交帖 + 监控标的日 K → LLM 合成 → 企微推送 + 微信公众号发布。配置见 `config/morning_briefing.py`。运行命令见上方「运行示例」。
 
-### 环境变量（追加到 `.env`）
-
-```env
-WECHAT_MP_APP_ID=...             # 公众号 AppID
-WECHAT_MP_APP_SECRET=...         # 公众号 Secret
-WECHAT_MP_THUMB_MEDIA_ID=...     # 封面图 media_id（草稿必填）
-MORNING_WEBHOOK_URL=...          # 可选，早报专用企微 webhook
-```
+所需环境变量：`DASHSCOPE_API_KEY`、`WECHAT_MP_APP_ID`、`WECHAT_MP_APP_SECRET`、`WECHAT_MP_THUMB_MEDIA_ID`；可选 `MORNING_WEBHOOK_URL`（见上方配置表）。
 
 ## 扩展
 
 - **新增数据链路**：
-  1. 在 `steps/` 下实现新的 Step（继承 `Step`，实现 `async process(data)`）
+  1. 在 `steps/` 下实现新的 Step（继承 `Step`，实现 `async process(items)`，list 进 list 出）
   2. 在 `tasks.py` 的 `TASK_REGISTRY` 中用 `|` 语法组合成 Task 并注册
   3. 在 `config/schedule.py:TASK_SCHEDULE` 加该 task key 的触发器配置
 - **新增数据源**：继承 `fetchers/base_fetcher.py:BaseFetcher`

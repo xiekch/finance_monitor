@@ -1,9 +1,9 @@
 import logging
 from datetime import date as _date
 
-from steps.notify_base import BaseNotifyStep
+from steps.notify.base import BaseNotifyStep
 from models.market import VolatilityAlert
-from notifiers.wechat_notifier import WeChatNotifier
+from clients.wechat_notifier import WeChatNotifier
 
 
 class VolatilityNotifyStep(BaseNotifyStep):

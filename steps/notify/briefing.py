@@ -1,8 +1,8 @@
 import logging
 
-from steps.notify_base import BaseNotifyStep
+from steps.notify.base import BaseNotifyStep
 from models.social import Briefing
-from notifiers.wechat_notifier import WeChatNotifier
+from clients.wechat_notifier import WeChatNotifier
 from config.social import X_BRIEFING_WEBHOOK_URLS
 from config.morning_briefing import MORNING_WEBHOOK_URLS
 

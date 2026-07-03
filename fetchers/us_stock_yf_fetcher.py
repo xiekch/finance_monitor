@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from .base_fetcher import BaseFetcher
 from models.market import PriceData
 from storage.market_db import MarketDataDB
-from infra.trading_hours import TradingHoursManager
+from fetchers.trading_hours import TradingHoursManager
 import logging
 
 

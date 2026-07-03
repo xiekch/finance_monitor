@@ -6,21 +6,27 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from steps.base import Step, Task, Fork
-from steps.fetch_astock import FetchAStock
-from steps.fetch_usstock import FetchUSStock
-from steps.fetch_crypto import FetchCrypto
-from steps.fetch_futures import FetchFutures
-from steps.fetch_x_posts import FetchXPosts
-from steps.fetch_weibo_posts import FetchWeiboPosts
-from steps.fetch_morning_data import FetchMorningData
+from steps.fetch import (
+    FetchAStock,
+    FetchUSStock,
+    FetchCrypto,
+    FetchFutures,
+    FetchXPosts,
+    FetchWeiboPosts,
+    FetchMorningData,
+)
+from steps.notify import (
+    VolatilityNotifyStep,
+    BriefingNotifyStep,
+    XBriefingNotifyStep,
+    MorningBriefingNotifyStep,
+    MarketBriefingNotifyStep,
+)
 from steps.morning_ai import MorningAIStep
 from steps.market_briefing import MarketBriefingStep
 from steps.storage import StorageStep
 from steps.volatility import VolatilityStep
 from steps.ai_briefing import AIBriefingStep
-from steps.volatility_notify import VolatilityNotifyStep
-from steps.briefing_notify import BriefingNotifyStep, XBriefingNotifyStep, MorningBriefingNotifyStep
-from steps.market_briefing_notify import MarketBriefingNotifyStep
 from steps.publish_mp import PublishMPStep
 
 from config.schedule import TASK_SCHEDULE

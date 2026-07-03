@@ -1,7 +1,16 @@
 import os
+from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# 项目根目录；运行时产物（DB / 日志）统一放这两个目录下
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = BASE_DIR / "data"
+LOG_DIR = BASE_DIR / "logs"
+DATA_DIR.mkdir(exist_ok=True)
+LOG_DIR.mkdir(exist_ok=True)
 
 PROXY = False
 PROXY_URL = "http://127.0.0.1:7897"
@@ -37,14 +46,9 @@ WECOM_CONFIG = {
 
 # 数据库配置
 DATABASE_CONFIG = {
-    'path': 'market_data.db',
+    'path': str(DATA_DIR / 'market_data.db'),
     'backup_interval_hours': 24
 }
 
-REDIS_CONFIG = {
-    'host': os.getenv('REDIS_HOST', 'localhost'),
-    'port': int(os.getenv('REDIS_PORT', 6379)),
-    'db': int(os.getenv('REDIS_DB', 0)),
-    'password': os.getenv('REDIS_PASSWORD') or None,
-    'decode_responses': True
-}
+# 日志配置
+LOG_FILE = str(LOG_DIR / 'app.log')

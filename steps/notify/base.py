@@ -1,5 +1,5 @@
 from steps.base import Step
-from notifiers.wechat_notifier import WeChatNotifier
+from clients.wechat_notifier import WeChatNotifier
 
 
 class BaseNotifyStep(Step):

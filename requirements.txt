@@ -7,8 +7,6 @@ markdown
 pandas
 python-dotenv
 pytz
-redis
 requests
-schedule
 websocket-client
 yfinance
