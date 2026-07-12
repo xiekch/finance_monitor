@@ -144,6 +144,12 @@ class FetchMorningData(Step):
             if market in _US_MARKETS:
                 return await self.us_fetcher.fetch_historical_data(
                     symbol=symbol, frequency="1d", start_date=start, end_date=end,
+                    market=market,
+                )
+            if market == "HK":
+                return await self.us_fetcher.fetch_historical_data(
+                    symbol=symbol, frequency="1d", start_date=start, end_date=end,
+                    market=market,
                 )
             if market == "CRYPTO":
                 return await self.crypto_fetcher.fetch_historical_data(

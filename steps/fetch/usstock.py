@@ -21,7 +21,7 @@ class FetchUSStock(Step):
     async def process(self, items: list = ()) -> List[PriceData]:
         symbols = self._get_symbols()
         if not symbols:
-            logging.warning(f"[{self.name}] 未找到美股标的配置")
+            logging.warning(f"[{self.name}] 未找到美股/港股标的配置")
             return []
 
         logging.info(f"[{self.name}] 开始处理 {len(symbols)} 个美股标的")
@@ -51,6 +51,7 @@ class FetchUSStock(Step):
                 rows = await self.fetcher.fetch_historical_data(
                     symbol=symbol, frequency=fetcher_freq,
                     start_date=end - timedelta(days=window_days), end_date=end,
+                    market=sym.get('market', 'US'),
                 )
                 results.extend(rows or [])
             except Exception as e:
@@ -58,14 +59,21 @@ class FetchUSStock(Step):
         return results
 
     def _get_symbols(self) -> List[dict]:
-        us_markets = ('US', 'NASDAQ', 'NYSE')
+        yf_markets = ('US', 'NASDAQ', 'NYSE', 'HK')
         result = []
         for s in MONITOR_CONFIG.get('stocks', []):
             if s['frequency'] != self.frequency:
                 continue
             market = s.get('market', '')
             symbol = s.get('symbol', '')
-            if market in us_markets or (len(symbol) <= 5 and symbol.isalpha() and symbol.isupper()):
+            if market in yf_markets:
+                result.append({
+                    'symbol': symbol,
+                    'market': market,
+                    'name': s.get('name', symbol),
+                    'threshold': s.get('threshold', 2.0),
+                })
+            elif len(symbol) <= 5 and symbol.isalpha() and symbol.isupper():
                 result.append({
                     'symbol': symbol, 'market': 'US',
                     'name': s.get('name', symbol),
