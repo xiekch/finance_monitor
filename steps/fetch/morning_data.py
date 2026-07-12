@@ -89,6 +89,27 @@ class FetchMorningData(Step):
                 }
         return list(seen.values())
 
+    @staticmethod
+    def _pick_two_daily_closes(
+        rows: List[PriceData],
+    ) -> Tuple[Optional[PriceData], Optional[PriceData]]:
+        """取最近两个交易日的收盘价：当日（可未收盘）对比昨收。
+
+        不能直接用 rows[-1]/rows[-2]：同一天可能有多条记录，需按 date 去重。
+        """
+        if not rows:
+            return None, None
+
+        by_date: dict = {}
+        for row in rows:
+            by_date[row.timestamp.date()] = row
+
+        dates = sorted(by_date.keys())
+        if len(dates) < 2:
+            return None, None
+
+        return by_date[dates[-1]], by_date[dates[-2]]
+
     async def _get_two_daily_closes(
         self, item: dict,
     ) -> Tuple[Optional[PriceData], Optional[PriceData]]:
@@ -99,16 +120,17 @@ class FetchMorningData(Step):
             symbol=symbol, market=market, frequency="1d",
             start_date=start, end_date=end,
         )
-        if len(db_rows) >= 2:
-            return db_rows[-1], db_rows[-2]
+        current, previous = self._pick_two_daily_closes(db_rows)
+        if current is not None and previous is not None:
+            return current, previous
 
         fetched = await self._fetch_recent_daily(item)
-        if not fetched or len(fetched) < 2:
+        if not fetched:
             return None, None
 
         for d in fetched:
             self.market_db.save_price_data(d)
-        return fetched[-1], fetched[-2]
+        return self._pick_two_daily_closes(fetched)
 
     async def _fetch_recent_daily(self, item: dict) -> Optional[List[PriceData]]:
         market, symbol = item["market"], item["symbol"]
