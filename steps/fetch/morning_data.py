@@ -21,12 +21,14 @@ _GROUPS: List[Tuple[str, Tuple[str, ...]]] = [
     ("A 股", ("SH", "SZ")),
     ("港股", ("HK",)),
     ("美股", ("US", "NASDAQ", "NYSE")),
+    ("日本", ("JP",)),
+    ("韩国", ("KR",)),
     ("加密货币", ("CRYPTO",)),
     ("期货", ("FUT",)),
 ]
 
 _A_STOCK_MARKETS = ("SH", "SZ")
-_US_MARKETS = ("US", "NASDAQ", "NYSE")
+_YFINANCE_MARKETS = ("US", "NASDAQ", "NYSE", "HK", "JP", "KR")
 
 
 class FetchMorningData(Step):
@@ -141,12 +143,7 @@ class FetchMorningData(Step):
                 return await self.stock_fetcher.fetch_historical_data(
                     symbol=symbol, frequency="1d", limit=7, market=market,
                 )
-            if market in _US_MARKETS:
-                return await self.us_fetcher.fetch_historical_data(
-                    symbol=symbol, frequency="1d", start_date=start, end_date=end,
-                    market=market,
-                )
-            if market == "HK":
+            if market in _YFINANCE_MARKETS:
                 return await self.us_fetcher.fetch_historical_data(
                     symbol=symbol, frequency="1d", start_date=start, end_date=end,
                     market=market,

@@ -59,7 +59,7 @@ class FetchUSStock(Step):
         return results
 
     def _get_symbols(self) -> List[dict]:
-        yf_markets = ('US', 'NASDAQ', 'NYSE', 'HK')
+        yf_markets = ('US', 'NASDAQ', 'NYSE', 'HK', 'JP', 'KR')
         result = []
         for s in MONITOR_CONFIG.get('stocks', []):
             if s['frequency'] != self.frequency:

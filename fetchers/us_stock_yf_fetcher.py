@@ -31,7 +31,7 @@ class USStockYfFetcher(BaseFetcher):
         yf_symbols = [
             symbol_info
             for symbol_info in symbols
-            if symbol_info.get("market") in ["US", "NASDAQ", "NYSE", "HK"]
+            if symbol_info.get("market") in ["US", "NASDAQ", "NYSE", "HK", "JP", "KR"]
         ]
 
         if not yf_symbols:
