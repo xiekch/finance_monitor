@@ -1,6 +1,6 @@
 import logging
-from datetime import datetime, timedelta
-from typing import List, Optional, Tuple
+from datetime import date, datetime, timedelta
+from typing import Dict, List, Optional, Tuple
 
 from steps.base import Step
 from models.market import PriceData
@@ -70,9 +70,13 @@ class FetchMorningData(Step):
         if not watchlist:
             return ""
 
+        current_by_key = await self._fetch_current_prices(watchlist)
+
         rows: List[dict] = []
         for item in watchlist:
-            current, previous = await self._get_two_daily_closes(item)
+            key = (item["symbol"], item["market"])
+            current = current_by_key.get(key)
+            previous = await self._get_prev_close(item, current)
             rows.append(self._build_row(item, current, previous))
 
         return self._format_market_markdown(rows)
@@ -92,29 +96,105 @@ class FetchMorningData(Step):
         return list(seen.values())
 
     @staticmethod
-    def _pick_two_daily_closes(
-        rows: List[PriceData],
-    ) -> Tuple[Optional[PriceData], Optional[PriceData]]:
-        """取最近两个交易日的收盘价：当日（可未收盘）对比昨收。
+    def _is_today(price: PriceData, today: Optional[date] = None) -> bool:
+        """现价是否属于今天；没有今天数据则不展示旧行情。"""
+        ref = today if today is not None else date.today()
+        return price.timestamp.date() == ref
 
-        不能直接用 rows[-1]/rows[-2]：同一天可能有多条记录，需按 date 去重。
+    async def _fetch_current_prices(
+        self, watchlist: List[dict],
+    ) -> Dict[Tuple[str, str], PriceData]:
+        """批量拉现价：只要今天的数据；实时优先，再回落今天的 DB 分钟/日线。"""
+        today = date.today()
+        grouped: Dict[str, List[dict]] = {
+            "astock": [],
+            "yf": [],
+            "crypto": [],
+            "fut": [],
+        }
+        for item in watchlist:
+            market = item["market"]
+            if market in _A_STOCK_MARKETS:
+                grouped["astock"].append(item)
+            elif market in _YFINANCE_MARKETS:
+                grouped["yf"].append(item)
+            elif market == "CRYPTO":
+                grouped["crypto"].append(item)
+            elif market == "FUT":
+                grouped["fut"].append(item)
+
+        results: Dict[Tuple[str, str], PriceData] = {}
+
+        async def _merge(fetcher_coro, label: str):
+            try:
+                prices = await fetcher_coro
+            except Exception as e:
+                logging.error(f"[{self.name}] 拉取{label}现价失败: {e}")
+                return
+            for price in prices:
+                if self._is_today(price, today):
+                    results[(price.symbol, price.market)] = price
+
+        if grouped["astock"]:
+            await _merge(
+                self.stock_fetcher.fetch_realtime_data(grouped["astock"]), "A股",
+            )
+        if grouped["yf"]:
+            await _merge(
+                self.us_fetcher.fetch_realtime_data(grouped["yf"]), "yfinance",
+            )
+        if grouped["crypto"]:
+            await _merge(
+                self.crypto_fetcher.fetch_realtime_data(grouped["crypto"]), "加密货币",
+            )
+        if grouped["fut"]:
+            await _merge(
+                self.futures_fetcher.fetch_realtime_data(grouped["fut"]), "期货",
+            )
+
+        for item in watchlist:
+            key = (item["symbol"], item["market"])
+            if key in results:
+                continue
+            latest_1m = self.market_db.get_latest_price(
+                symbol=item["symbol"], market=item["market"], frequency="1m",
+            )
+            if latest_1m is not None and self._is_today(latest_1m, today):
+                results[key] = latest_1m
+                continue
+            latest_1d = self.market_db.get_latest_price(
+                symbol=item["symbol"], market=item["market"], frequency="1d",
+            )
+            if latest_1d is not None and self._is_today(latest_1d, today):
+                results[key] = latest_1d
+
+        return results
+
+    @staticmethod
+    def _pick_prev_close(
+        rows: List[PriceData], before: date,
+    ) -> Optional[PriceData]:
+        """取严格早于 before 的最近一根日线，作为昨收。
+
+        同一天可能有多条记录，按 date 去重后取该日最后一条。
         """
         if not rows:
-            return None, None
+            return None
 
         by_date: dict = {}
         for row in rows:
             by_date[row.timestamp.date()] = row
 
-        dates = sorted(by_date.keys())
-        if len(dates) < 2:
-            return None, None
+        candidates = [d for d in sorted(by_date.keys()) if d < before]
+        if not candidates:
+            return None
+        return by_date[candidates[-1]]
 
-        return by_date[dates[-1]], by_date[dates[-2]]
-
-    async def _get_two_daily_closes(
-        self, item: dict,
-    ) -> Tuple[Optional[PriceData], Optional[PriceData]]:
+    async def _get_prev_close(
+        self, item: dict, current: Optional[PriceData],
+    ) -> Optional[PriceData]:
+        """现价对应的昨收：严格早于现价日期（或今天）的最近日线收盘价。"""
+        before = current.timestamp.date() if current is not None else date.today()
         symbol, market = item["symbol"], item["market"]
         end = datetime.now()
         start = end - timedelta(days=14)
@@ -122,17 +202,17 @@ class FetchMorningData(Step):
             symbol=symbol, market=market, frequency="1d",
             start_date=start, end_date=end,
         )
-        current, previous = self._pick_two_daily_closes(db_rows)
-        if current is not None and previous is not None:
-            return current, previous
+        previous = self._pick_prev_close(db_rows, before)
+        if previous is not None:
+            return previous
 
         fetched = await self._fetch_recent_daily(item)
         if not fetched:
-            return None, None
+            return None
 
         for d in fetched:
             self.market_db.save_price_data(d)
-        return self._pick_two_daily_closes(fetched)
+        return self._pick_prev_close(fetched, before)
 
     async def _fetch_recent_daily(self, item: dict) -> Optional[List[PriceData]]:
         market, symbol = item["market"], item["symbol"]
@@ -193,7 +273,7 @@ class FetchMorningData(Step):
             lines.append(f"【{label}】")
             for r in group_rows:
                 if r["missing"]:
-                    lines.append(f"{r['name']}({r['symbol']}) 暂无数据")
+                    lines.append(f"{r['name']}({r['symbol']}) 无最新数据")
                 else:
                     arrow = "📈" if r["change_pct"] >= 0 else "📉"
                     lines.append(
