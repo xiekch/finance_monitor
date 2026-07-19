@@ -78,7 +78,7 @@ SOCIAL_CONFIG = {
         # - None: 不传该字段（沿用模型默认）
         # - False: 显式关闭（仅 qwen3 系列生效；deepseek 等会忽略）
         # - True: 显式开启
-        "enable_thinking": False,
+        "enable_thinking": True,
     },
 
     # Prompt 主体
