@@ -6,6 +6,7 @@ from .base_fetcher import BaseFetcher
 from models.market import PriceData
 from storage.market_db import MarketDataDB
 from fetchers.trading_hours import TradingHoursManager
+from utils.rate_limit import get_rate_limiter
 import logging
 
 
@@ -16,6 +17,10 @@ class USStockYfFetcher(BaseFetcher):
         super().__init__(api_config or {})
         self.trading_hours_manager = TradingHoursManager()
         self.db = MarketDataDB()
+        yf_cfg = (api_config or {}).get('yfinance', {})
+        self._yf_limiter = get_rate_limiter(
+            'yfinance', yf_cfg.get('min_interval_seconds', 15),
+        )
 
     @staticmethod
     def to_yfinance_ticker(symbol: str, market: str = "US") -> str:
@@ -62,6 +67,7 @@ class USStockYfFetcher(BaseFetcher):
             market = symbol_info.get("market", "US")
             yf_symbol = self.to_yfinance_ticker(symbol, market)
 
+            await self._yf_limiter.acquire()
             ticker = yf.Ticker(yf_symbol)
             history = ticker.history(period="1d", interval="1m")
 
@@ -127,6 +133,7 @@ class USStockYfFetcher(BaseFetcher):
             start_str = start_date.strftime("%Y-%m-%d")
             end_str = end_date.strftime("%Y-%m-%d")
 
+            await self._yf_limiter.acquire()
             ticker = yf.Ticker(yf_symbol)
 
             history = ticker.history(

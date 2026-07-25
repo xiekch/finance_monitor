@@ -25,7 +25,12 @@ else:
 API_CONFIG = {
     'itick': {
         'token': os.getenv('ITICK_TOKEN', 'YOUR_ITICK_TOKEN'),
-        'base_url': 'https://api.itick.org'
+        'base_url': 'https://api.itick.org',
+        # 请求级频控：同 provider 串行，两次请求至少间隔 N 秒
+        'min_interval_seconds': float(os.getenv('ITICK_MIN_INTERVAL_SECONDS', '15')),
+    },
+    'yfinance': {
+        'min_interval_seconds': float(os.getenv('YFINANCE_MIN_INTERVAL_SECONDS', '15')),
     },
     'finage': {
         'api_key': os.getenv('FINAGE_API_KEY', 'YOUR_FINAGE_KEY'),

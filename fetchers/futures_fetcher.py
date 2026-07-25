@@ -8,6 +8,7 @@ from .base_fetcher import BaseFetcher
 from models.market import PriceData
 from storage.market_db import MarketDataDB
 from fetchers.trading_hours import TradingHoursManager
+from utils.rate_limit import get_rate_limiter
 
 
 class FuturesFetcher(BaseFetcher):
@@ -17,6 +18,10 @@ class FuturesFetcher(BaseFetcher):
         super().__init__(api_config)
         self.trading_hours_manager = TradingHoursManager()
         self.db = MarketDataDB()
+        itick_cfg = api_config.get('itick', {})
+        self._itick_limiter = get_rate_limiter(
+            'itick', itick_cfg.get('min_interval_seconds', 15),
+        )
 
     async def fetch_realtime_data(self, symbols: List[dict]) -> List[PriceData]:
         results = []
@@ -49,6 +54,7 @@ class FuturesFetcher(BaseFetcher):
             'token': self.api_config['itick']['token'],
         }
         try:
+            await self._itick_limiter.acquire()
             async with session.get(url, params=params, headers=headers) as response:
                 if response.status == 200:
                     data = await response.json()
