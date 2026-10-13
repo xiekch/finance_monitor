@@ -28,13 +28,13 @@ from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 class Step(ABC):
     """管道中的一个处理步骤。
 
-    契约：``process`` 接收上游产出的领域对象列表，返回传给下游的列表；
-    返回空列表则链路终止。链路起点（fetch 步骤）收到的是空列表。
+    契约：``process`` 接收上游产出的领域对象列表，返回传给下游的列表。
+    空列表也会继续交给下一步，由各步骤自行处理。链路起点收到的是空列表。
     """
 
     @abstractmethod
     async def process(self, items: list) -> list:
-        """处理一批领域对象，返回给下一步的列表。空列表表示链路终止。"""
+        """处理一批领域对象，返回给下一步的列表。"""
 
     def __or__(self, other: Step) -> Chain:
         left = self.steps if isinstance(self, Chain) else [self]
@@ -51,13 +51,11 @@ class Chain(Step):
     async def process(self, items: list) -> list:
         for step in self.steps:
             items = await step.process(items)
-            if not items:
-                return []
         return items
 
 
 class Fork(Step):
-    """分叉：把同一份数据交给多个分支分别处理，然后终止主链。"""
+    """分叉：把同一份数据交给多个分支分别处理。主链拿到的是空列表，后续步骤仍会执行。"""
 
     def __init__(self, *branches: Step):
         self.branches = branches

@@ -6,7 +6,7 @@ import pytest
 from steps.base import Step, Chain, Fork, FetchMultiSource, Task, TaskRunner
 
 
-# ── 测试用 Step 实现（契约：list 进 list 出，空 list 终止链路）──
+# ── 测试用 Step 实现（契约：list 进 list 出，空 list 也继续）──
 
 class AddStep(Step):
     def __init__(self, n: int):
@@ -76,12 +76,12 @@ class TestChain:
         # (5 + 10) * 3 = 45
         assert result == [45]
 
-    def test_chain_stops_on_empty(self):
+    def test_chain_continues_on_empty(self):
         collector = CollectorStep()
         chain = AddStep(1) | EmptyStep() | collector
         result = asyncio.run(chain.process([0]))
         assert result == []
-        assert collector.received == []
+        assert collector.received == [[]]
 
     def test_single_step_pipe(self):
         chain = AddStep(5) | MultiplyStep(2)
@@ -116,14 +116,14 @@ class TestFork:
         assert result == []
         assert c1.received == [["data"]]
 
-    def test_fork_in_chain_terminates(self):
+    def test_fork_in_chain_continues(self):
         collector = CollectorStep()
         after = CollectorStep()
         chain = AddStep(1) | Fork(collector) | after
         result = asyncio.run(chain.process([0]))
         assert result == []
         assert collector.received == [[1]]
-        assert after.received == []
+        assert after.received == [[]]
 
 
 # ── FetchMultiSource 测试 ──
@@ -178,6 +178,39 @@ class TestAppIntegration:
         tasks = build_tasks(["x_briefing", "weibo_briefing"], run_immediately=False, ignore_schedule=True)
         names = sorted(t.name for t in tasks)
         assert names == ["weibo_briefing", "x_briefing"]
+
+    def test_morning_briefing_fetches_posts_before_market(self):
+        from tasks import build_tasks
+        tasks = build_tasks(["morning_briefing"], run_immediately=False, ignore_schedule=True)
+        step_names = [s.__class__.__name__ for s in tasks[0].chain.steps]
+        assert step_names == [
+            "FetchXPosts", "StorageStep", "FetchMorningData", "MorningAIStep", "Fork",
+        ]
+
+    def test_fetch_x_posts_keeps_chain_alive_when_empty(self):
+        from steps.fetch.x_posts import FetchXPosts
+
+        class FakeStore:
+            def get_latest_post_id(self, author, platform="x"):
+                return None
+
+            def get_latest_created_at(self, platform="x", authors=None):
+                return None
+
+        class FakeSocial:
+            async def search_tweets(self, query, limit, since, since_ids_by_author=None):
+                return []
+
+        seen = []
+
+        class Next(Step):
+            async def process(self, items):
+                seen.append(items)
+                return items
+
+        chain = FetchXPosts(social=FakeSocial(), store=FakeStore()) | Next()
+        asyncio.run(chain.process([]))
+        assert seen == [[]]
 
     def test_build_tasks_all_types(self):
         from tasks import build_tasks

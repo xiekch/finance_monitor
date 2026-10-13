@@ -36,7 +36,7 @@ Task = Step | Step | Step | ...
 └──────────────────────────────────────────────────────────────┘
 ```
 
-Step 之间传递领域对象列表（list 进 list 出）；返回空列表则链路终止。`Fork` 将同一份数据发给多个分支分别处理。
+Step 之间传递领域对象列表（list 进 list 出）；空列表也会交给下一步。`Fork` 将同一份数据发给多个分支分别处理。
 
 ## 目录结构
 
@@ -169,7 +169,7 @@ python3 -m venv .venv
 # 完整链路：先更新日 K，再三套简报（推荐手动触发早报时用）
 .venv/bin/python3 app.py -t morning_pack --once
 
-# 单独跑公众号早报（依赖 social_posts 已有数据）
+# 单独跑公众号早报（先拉 X 推文落库，再合成早报）
 .venv/bin/python3 app.py -t morning_briefing --once
 ```
 
@@ -213,9 +213,9 @@ python3 -m venv .venv
 
 ## 公众号 AI 早报
 
-`morning_briefing` task：读库中社交帖 + 监控标的日 K → LLM 合成 → 企微推送 + 微信公众号发布。配置见 `config/morning_briefing.py`。运行命令见上方「运行示例」。
+`morning_briefing` task：先拉取 X 推文落库，再读社交帖 + 监控标的行情 → LLM 合成 → 企微推送 + 微信公众号发布。配置见 `config/social.py` 与 `config/morning_briefing.py`。运行命令见上方「运行示例」。
 
-所需环境变量：当前 LLM 后端对应的密钥（`tongyi` 用 `DASHSCOPE_API_KEY`，`cursor` 用 `CURSOR_API_KEY`）、`WECHAT_MP_APP_ID`、`WECHAT_MP_APP_SECRET`、`WECHAT_MP_THUMB_MEDIA_ID`；可选 `MORNING_WEBHOOK_URL`（见上方配置表）。
+所需环境变量：`TWITTERAPI_IO_KEY`、当前 LLM 后端对应的密钥（`tongyi` 用 `DASHSCOPE_API_KEY`，`cursor` 用 `CURSOR_API_KEY`）、`WECHAT_MP_APP_ID`、`WECHAT_MP_APP_SECRET`、`WECHAT_MP_THUMB_MEDIA_ID`；可选 `MORNING_WEBHOOK_URL`（见上方配置表）。
 
 ## 扩展
 

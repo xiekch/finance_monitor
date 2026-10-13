@@ -22,7 +22,7 @@ class FetchXPosts(Step):
         self.social = social or build_default_social_client()
         self.store = store or SocialPostStore()
 
-    async def process(self, items: list = ()) -> List[SocialPost]:
+    async def process(self, items: list = ()) -> list:
         whitelist: List[str] = SOCIAL_CONFIG["whitelist"]
         window_hours: int = SOCIAL_CONFIG["window_hours"]
         fetch_mode: str = SOCIAL_CONFIG["social_provider"].get("fetch_mode", "timeline")
@@ -57,7 +57,7 @@ class FetchXPosts(Step):
                 posts.extend(fetched)
 
         if not posts:
-            logging.info(f"[{self.name}] no posts, skip")
+            logging.info(f"[{self.name}] no posts")
             return []
 
         posts.sort(key=lambda p: p.created_at)

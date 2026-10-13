@@ -76,7 +76,8 @@ TASK_REGISTRY: dict[str, Callable[[], Step]] = {
         lambda: FetchMorningData() | MarketBriefingStep() | MarketBriefingNotifyStep()
     ),
     "morning_briefing": (
-        lambda: FetchMorningData() | MorningAIStep() | Fork(StorageStep(), MorningBriefingNotifyStep(), PublishMPStep())
+        lambda: FetchXPosts() | StorageStep() | FetchMorningData()
+        | MorningAIStep() | Fork(StorageStep(), MorningBriefingNotifyStep(), PublishMPStep())
     ),
 }
 
