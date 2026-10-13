@@ -33,11 +33,11 @@ def _active_llm_provider() -> dict:
         },
         "cursor": {
             "api_key": os.getenv("CURSOR_API_KEY", ""),
-            "base_url": os.getenv("CURSOR_API_BASE", "https://api.cursor.com").rstrip("/"),
-            "model": os.getenv("CURSOR_MODEL", "composer-2.5"),
-            # 云端 agent 含排队和虚拟机启动，比直连 chat 接口更慢
-            "timeout_sec": int(os.getenv("CURSOR_TIMEOUT_SEC", "300")),
-            "poll_interval_sec": float(os.getenv("CURSOR_POLL_INTERVAL_SEC", "3")),
+            "base_url": "https://api.cursor.com",
+            "model": "grok-4.7",
+            # 云端 agent 含排队、搜索，比直连 chat 接口更慢
+            "timeout_sec": 900,
+            "poll_interval_sec": 3,
         },
     }
     if name not in catalog:
