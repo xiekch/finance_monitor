@@ -4,7 +4,6 @@ import asyncio
 import pytest
 
 from clients.llm_client import BriefingInput, CursorLLMClient, client_from_config
-from clients.llm_client.cursor import _TASK_PREFIX
 from models.social import SocialPost
 
 
@@ -81,7 +80,7 @@ def test_summarize_returns_finished_text_and_usage():
     assert url.endswith("/v1/agents")
     assert "repos" not in kwargs["json"]
     assert kwargs["json"]["model"] == {"id": "composer-2.5"}
-    assert kwargs["json"]["prompt"]["text"].startswith(_TASK_PREFIX)
+    assert kwargs["json"]["prompt"]["text"].startswith("窗口 24 上限 3000")
     assert session.calls[2][0] == "GET"
     assert session.calls[2][2]["params"] == {"runId": "run-1"}
 

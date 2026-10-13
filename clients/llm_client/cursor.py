@@ -9,9 +9,6 @@ from clients.llm_client.base import BriefingInput, BriefingOutput, render_briefi
 
 
 _TERMINAL_STATUSES = {"FINISHED", "ERROR", "CANCELLED", "EXPIRED"}
-_TASK_PREFIX = (
-    "这是一次简报生成任务。只把最终简报正文作为回复。\n\n"
-)
 
 
 class CursorLLMClient:
@@ -43,7 +40,7 @@ class CursorLLMClient:
     async def summarize(self, payload: BriefingInput) -> BriefingOutput:
         if not self.api_key:
             raise RuntimeError("CURSOR_API_KEY 未配置")
-        prompt = _TASK_PREFIX + render_briefing_prompt(self.prompt_template, payload)
+        prompt = render_briefing_prompt(self.prompt_template, payload)
         logging.info(
             f"[CursorLLMClient] invoking model={self.model} "
             f"posts={len(payload.posts)} prompt_chars={len(prompt)}"
