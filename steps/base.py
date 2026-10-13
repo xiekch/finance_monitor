@@ -157,12 +157,19 @@ class TaskRunner:
                 for name in immediate:
                     self._run_task_sync(name)
             else:
+                # --once 不挂调度，主线程必须等这些立即任务结束再退出。
+                wait = all(self.tasks[name].ignore_schedule for name in immediate)
+                threads = []
                 for name in immediate:
                     logging.info(f"[TaskRunner] 立即执行 {name}")
                     thread = threading.Thread(
-                        target=self._run_task_sync, args=(name,), daemon=True,
+                        target=self._run_task_sync, args=(name,), daemon=not wait,
                     )
                     thread.start()
+                    threads.append(thread)
+                if wait:
+                    for thread in threads:
+                        thread.join()
 
         for name, task in self.tasks.items():
             if not task.ignore_schedule and task.trigger:

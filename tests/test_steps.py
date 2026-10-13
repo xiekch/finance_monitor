@@ -206,3 +206,39 @@ class TestAppIntegration:
         from app import parse_args
         with pytest.raises(SystemExit):
             parse_args(["-t", "nonexistent_task"])
+
+    def test_once_returns_without_waiting(self, monkeypatch):
+        from app import TaskApp
+        app = TaskApp()
+        monkeypatch.setattr(app, "start", lambda *a, **k: None)
+
+        def fail(*a, **k):
+            raise AssertionError("should not keep running")
+
+        monkeypatch.setattr("app.time.sleep", fail)
+        app.run(["morning_briefing"], ignore_schedule=True)
+
+
+class TestTaskRunner:
+    def test_parallel_once_joins_before_return(self):
+        done = []
+
+        class Mark(Step):
+            def __init__(self, name):
+                self.name = name
+
+            async def process(self, items):
+                await asyncio.sleep(0.05)
+                done.append(self.name)
+                return items
+
+        runner = TaskRunner()
+        for name in ("a", "b"):
+            runner.register(Task(
+                name=name,
+                chain=Mark(name),
+                run_immediately=True,
+                ignore_schedule=True,
+            ))
+        runner.start(sequential=False)
+        assert sorted(done) == ["a", "b"]

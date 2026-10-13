@@ -129,7 +129,7 @@ python3 -m venv .venv
 # 完整早报链路：日 K 行情 → 三套简报，串行跑一遍后按 cron 常驻
 .venv/bin/python3 app.py -t morning_pack
 
-# 只跑一遍完整链路，不注册 cron（跑完可 Ctrl+C）
+# 只跑一遍完整链路，不注册 cron，跑完退出
 .venv/bin/python3 app.py -t morning_pack --once
 
 # 不立即执行，仅等 cron 触发

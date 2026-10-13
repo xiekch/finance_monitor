@@ -66,7 +66,8 @@ class TaskApp:
         task_names = [t.name for t in tasks]
         logging.info(f"已启动 Task: {task_names}")
         print(f"系统启动完成，已启动 {len(tasks)} 个 Task: {task_names}")
-        print("按 Ctrl+C 停止系统")
+        if not ignore_schedule:
+            print("按 Ctrl+C 停止系统")
 
     def _signal_handler(self, signum, frame):
         print(f"\n接收到信号 {signum}，正在关闭系统...")
@@ -91,10 +92,10 @@ class TaskApp:
             self.start(task_keys, run_immediately, ignore_schedule, sequential)
 
             if ignore_schedule:
-                print("忽略调度模式，Task 已立即执行一次；保持运行等待处理完成，按 Ctrl+C 退出。")
-            else:
-                print("正常调度模式，系统持续运行中，按 Ctrl+C 退出。")
+                print("单次执行已完成，退出")
+                return
 
+            print("正常调度模式，系统持续运行中，按 Ctrl+C 退出。")
             try:
                 while self.is_running:
                     time.sleep(1)
@@ -118,7 +119,7 @@ def parse_args(argv: list[str] | None = None):
     )
     parser.add_argument(
         "--once", action="store_true", default=False,
-        help="只执行一次，忽略调度",
+        help="只执行一次后退出，不注册调度",
     )
     parser.add_argument(
         "--parallel", action="store_true", default=False,
