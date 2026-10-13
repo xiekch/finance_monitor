@@ -8,6 +8,7 @@ from .base_fetcher import BaseFetcher
 from models.market import PriceData
 from storage.market_db import MarketDataDB
 from fetchers.trading_hours import TradingHoursManager
+from fetchers.sina_quote import fetch_sina_quotes, price_from_fields, sina_code
 from utils.rate_limit import get_rate_limiter
 
 class AStockFetcher(BaseFetcher):
@@ -23,34 +24,60 @@ class AStockFetcher(BaseFetcher):
         )
     
     async def fetch_realtime_data(self, symbols: List[dict]) -> List[PriceData]:
-        """获取股票实时数据"""
+        """获取股票实时数据。沪深走新浪批量报价，不再走 iTick。"""
         results = []
-        
-        async with aiohttp.ClientSession() as session:
-            tasks = []
-            for symbol_info in symbols:
-                market_type = self.trading_hours_manager.get_market_type(
-                    symbol_info['symbol'], symbol_info.get('market', '')
-                )
-                
-                # 检查交易时间
-                if self.trading_hours_manager.is_trading_time(market_type):
-                    task = self._fetch_single_stock(session, symbol_info)
-                    tasks.append(task)
-                else:
-                    # 非交易时间，从数据库获取最新数据
-                    latest_data = self._get_latest_from_db(symbol_info)
-                    if latest_data:
-                        results.append(latest_data)
-            
-            # 并行获取实时数据；写库职责由 StorageConsumer 统一承担，fetcher 不再直接写库
-            if tasks:
+        live_cn = []
+        live_other = []
+
+        for symbol_info in symbols:
+            market_type = self.trading_hours_manager.get_market_type(
+                symbol_info['symbol'], symbol_info.get('market', '')
+            )
+            if not self.trading_hours_manager.is_trading_time(market_type):
+                latest_data = self._get_latest_from_db(symbol_info)
+                if latest_data:
+                    results.append(latest_data)
+                continue
+            market = symbol_info.get('market', '')
+            if market in ('SH', 'SZ'):
+                live_cn.append(symbol_info)
+            else:
+                live_other.append(symbol_info)
+
+        if live_cn:
+            results.extend(await self._fetch_sina_ashares(live_cn))
+
+        if live_other:
+            async with aiohttp.ClientSession() as session:
+                tasks = [self._fetch_single_stock(session, info) for info in live_other]
                 realtime_results = await asyncio.gather(*tasks, return_exceptions=True)
                 for result in realtime_results:
                     if isinstance(result, PriceData):
                         results.append(result)
 
         return results
+
+    async def _fetch_sina_ashares(self, symbols: List[dict]) -> List[PriceData]:
+        codes = [sina_code(info['symbol'], info.get('market', '')) for info in symbols]
+        try:
+            quotes = await fetch_sina_quotes(codes)
+        except Exception as e:
+            logging.error(f"[AStockFetcher] 新浪行情获取失败: {e}")
+            return []
+        prices = []
+        for info in symbols:
+            code = sina_code(info['symbol'], info.get('market', ''))
+            fields = quotes.get(code)
+            if not fields:
+                logging.error(f"[AStockFetcher] 新浪未返回 {info.get('name', info['symbol'])}")
+                continue
+            price = price_from_fields(info['symbol'], info.get('market', ''), fields)
+            if price is None:
+                logging.error(f"[AStockFetcher] 新浪报价无效 {info.get('name', info['symbol'])}")
+                continue
+            prices.append(price)
+        logging.info(f"[AStockFetcher] 新浪行情 {len(prices)}/{len(symbols)}")
+        return prices
     
     def _get_latest_from_db(self, symbol_info: dict) -> Optional[PriceData]:
         """从数据库获取最新数据"""

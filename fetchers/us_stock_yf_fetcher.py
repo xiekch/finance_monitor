@@ -1,6 +1,6 @@
 import yfinance as yf
 import asyncio
-from typing import List, Optional
+from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 from .base_fetcher import BaseFetcher
 from models.market import PriceData
@@ -21,6 +21,8 @@ class USStockYfFetcher(BaseFetcher):
         self._yf_limiter = get_rate_limiter(
             'yfinance', yf_cfg.get('min_interval_seconds', 15),
         )
+        # 同一次早报里，实时批量下载的日线留给随后的昨收查询，避免每个标的再打一遍。
+        self._daily_cache: Dict[str, List[PriceData]] = {}
 
     @staticmethod
     def to_yfinance_ticker(symbol: str, market: str = "US") -> str:
@@ -51,50 +53,122 @@ class USStockYfFetcher(BaseFetcher):
         return results
 
     async def _fetch_yfinance_realtime(self, symbols: List[dict]) -> List[PriceData]:
-        """使用 yfinance 获取实时数据"""
-        tasks = []
-        for symbol_info in symbols:
-            task = self._fetch_single_stock(symbol_info)
-            tasks.append(task)
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        return [result for result in results if isinstance(result, PriceData)]
-
-    async def _fetch_single_stock(self, symbol_info: dict) -> Optional[PriceData]:
-        """获取单只股票数据"""
+        """一次下载全部标的的日线。逐个 Ticker.history 会把 Yahoo 打到限流。"""
+        tickers = [
+            self.to_yfinance_ticker(info["symbol"], info.get("market", "US"))
+            for info in symbols
+        ]
+        await self._yf_limiter.acquire()
         try:
-            symbol = symbol_info["symbol"]
-            market = symbol_info.get("market", "US")
-            yf_symbol = self.to_yfinance_ticker(symbol, market)
-
-            await self._yf_limiter.acquire()
-            ticker = yf.Ticker(yf_symbol)
-            history = ticker.history(period="1d", interval="1m")
-
-            if history.empty:
-                logging.error(f"yfinance 未返回数据 for {yf_symbol}")
-                return None
-
-            logging.debug(f"history {history}")
-            latest = history.iloc[-1]
-
-            return PriceData(
-                symbol=symbol,
-                market=market,
-                timestamp=datetime.now(),
-                open=float(latest["Open"]),
-                high=float(latest["High"]),
-                low=float(latest["Low"]),
-                close=float(latest["Close"]),
-                volume=int(latest["Volume"]),
-                frequency="1m"
-            )
-
+            frame = await asyncio.to_thread(self._download_daily, tickers)
         except Exception as e:
-            logging.error(
-                f"yfinance 数据获取失败 {symbol_info.get('name', symbol_info['symbol'])}: {e}"
+            logging.error(f"yfinance 批量行情获取失败: {e}")
+            frame = None
+        self._store_daily_cache(frame, symbols)
+        prices = []
+        for info in symbols:
+            ticker = self.to_yfinance_ticker(info["symbol"], info.get("market", "US"))
+            bars = self._daily_cache.get(ticker) or []
+            if not bars:
+                logging.error(f"yfinance 未返回数据 for {ticker}")
+                continue
+            last = bars[-1]
+            prices.append(PriceData(
+                symbol=info["symbol"],
+                market=info.get("market", "US"),
+                timestamp=datetime.now(),
+                open=last.open,
+                high=last.high,
+                low=last.low,
+                close=last.close,
+                volume=last.volume,
+                frequency="1m",
+            ))
+        got = {price.symbol for price in prices}
+        missing = [info for info in symbols if info["symbol"] not in got]
+        if missing:
+            logging.warning(
+                f"yfinance 缺少 {len(missing)} 个标的，改用新浪行情"
             )
-            return None
+            prices.extend(await self._fetch_sina_fallback(missing))
+        logging.info(f"yfinance 批量行情 {len(prices)}/{len(symbols)}")
+        return prices
+
+    async def _fetch_sina_fallback(self, symbols: List[dict]) -> List[PriceData]:
+        from fetchers.sina_quote import fetch_sina_quotes, overseas_quote, overseas_sina_code
+
+        coded = []
+        for info in symbols:
+            code = overseas_sina_code(info["symbol"], info.get("market", "US"))
+            if code is None:
+                logging.error(f"新浪没有 {info.get('name', info['symbol'])} 的备用代码")
+                continue
+            coded.append((info, code))
+        if not coded:
+            return []
+        try:
+            quotes = await fetch_sina_quotes([code for _, code in coded])
+        except Exception as e:
+            logging.error(f"新浪备用行情获取失败: {e}")
+            return []
+        prices = []
+        for info, code in coded:
+            market = info.get("market", "US")
+            parsed = overseas_quote(info["symbol"], market, quotes.get(code))
+            if parsed is None:
+                logging.error(f"新浪备用报价无效 {info.get('name', info['symbol'])}")
+                continue
+            price, prev_close = parsed
+            prices.append(price)
+            ticker = self.to_yfinance_ticker(info["symbol"], market)
+            yesterday = datetime.now().replace(
+                hour=0, minute=0, second=0, microsecond=0,
+            ) - timedelta(days=1)
+            self._daily_cache[ticker] = [PriceData(
+                symbol=info["symbol"],
+                market=price.market,
+                timestamp=yesterday,
+                open=prev_close,
+                high=prev_close,
+                low=prev_close,
+                close=prev_close,
+                volume=0,
+                frequency="1d",
+            )]
+        return prices
+
+    @staticmethod
+    def _download_daily(tickers: List[str]):
+        return yf.download(
+            tickers,
+            period="1mo",
+            interval="1d",
+            group_by="ticker",
+            threads=False,
+            progress=False,
+            auto_adjust=False,
+        )
+
+    def _store_daily_cache(self, frame, symbols: List[dict]) -> None:
+        tickers = [
+            self.to_yfinance_ticker(info["symbol"], info.get("market", "US"))
+            for info in symbols
+        ]
+        by_ticker = split_download_frame(frame, tickers)
+        info_by_ticker = {
+            self.to_yfinance_ticker(info["symbol"], info.get("market", "US")): info
+            for info in symbols
+        }
+        for ticker, history in by_ticker.items():
+            info = info_by_ticker[ticker]
+            bars = bars_from_history(
+                history,
+                symbol=info["symbol"],
+                market=info.get("market", "US"),
+                frequency="1d",
+            )
+            if bars:
+                self._daily_cache[ticker] = bars
 
     def _get_latest_from_db(self, symbol_info: dict) -> Optional[PriceData]:
         """从数据库获取最新数据"""
@@ -126,6 +200,14 @@ class USStockYfFetcher(BaseFetcher):
             start_date = end_date - timedelta(days=30)
 
         yf_symbol = self.to_yfinance_ticker(symbol, market)
+        cached = self._daily_cache.get(yf_symbol)
+        if cached and frequency == "1d":
+            start_naive = _naive(start_date)
+            end_naive = _naive(end_date)
+            return [
+                bar for bar in cached
+                if start_naive <= _naive(bar.timestamp) <= end_naive
+            ]
 
         try:
             yf_interval = self._convert_frequency(frequency)
@@ -246,3 +328,64 @@ class USStockYfFetcher(BaseFetcher):
         except Exception as e:
             logging.error(f"获取股票信息失败 {symbol}: {e}")
             return {}
+
+
+def _naive(ts: datetime) -> datetime:
+    if getattr(ts, "tzinfo", None) is not None:
+        return ts.replace(tzinfo=None)
+    return ts
+
+
+def split_download_frame(frame, tickers: List[str]) -> Dict[str, object]:
+    """把 yf.download 的宽表拆成每个 ticker 一张表。兼容单标的和两种 MultiIndex。"""
+    import pandas as pd
+
+    if frame is None or getattr(frame, "empty", True):
+        return {}
+    columns = frame.columns
+    if isinstance(columns, pd.MultiIndex):
+        level0 = set(columns.get_level_values(0))
+        if any(ticker in level0 for ticker in tickers):
+            return {
+                ticker: frame[ticker].dropna(how="all")
+                for ticker in tickers
+                if ticker in level0
+            }
+        level1 = set(columns.get_level_values(1))
+        if any(ticker in level1 for ticker in tickers):
+            return {
+                ticker: frame.xs(ticker, axis=1, level=1).dropna(how="all")
+                for ticker in tickers
+                if ticker in level1
+            }
+        return {}
+    if len(tickers) == 1:
+        return {tickers[0]: frame.dropna(how="all")}
+    return {}
+
+
+def bars_from_history(history, symbol: str, market: str, frequency: str) -> List[PriceData]:
+    bars: List[PriceData] = []
+    for timestamp, row in history.iterrows():
+        if row.isnull().any():
+            continue
+        close = row.get("Close")
+        if close is None or close != close:
+            continue
+        ts = timestamp.to_pydatetime() if hasattr(timestamp, "to_pydatetime") else timestamp
+        try:
+            volume = float(row.get("Volume"))
+        except (TypeError, ValueError):
+            volume = 0
+        bars.append(PriceData(
+            symbol=symbol,
+            market=market,
+            timestamp=_naive(ts),
+            open=float(row["Open"]),
+            high=float(row["High"]),
+            low=float(row["Low"]),
+            close=float(close),
+            volume=volume,
+            frequency=frequency,
+        ))
+    return bars

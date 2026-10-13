@@ -1,81 +1,62 @@
-import aiohttp
 import asyncio
 import logging
-from typing import List, Optional
-from datetime import datetime
+from typing import List
 
 from .base_fetcher import BaseFetcher
 from models.market import PriceData
 from storage.market_db import MarketDataDB
 from fetchers.trading_hours import TradingHoursManager
-from utils.rate_limit import get_rate_limiter
+from fetchers.sina_quote import fetch_sina_quotes, price_from_fields, sina_code
 
 
 class FuturesFetcher(BaseFetcher):
-    """期货数据获取器：实时走 iTick，历史走 akshare"""
+    """期货数据获取器：实时走新浪，历史走 akshare"""
 
     def __init__(self, api_config: dict):
         super().__init__(api_config)
         self.trading_hours_manager = TradingHoursManager()
         self.db = MarketDataDB()
-        itick_cfg = api_config.get('itick', {})
-        self._itick_limiter = get_rate_limiter(
-            'itick', itick_cfg.get('min_interval_seconds', 15),
-        )
 
     async def fetch_realtime_data(self, symbols: List[dict]) -> List[PriceData]:
+        """交易时段走新浪期货连续报价；非交易时段用 DB 里的分钟线。"""
         results = []
-        async with aiohttp.ClientSession() as session:
-            tasks = [self._fetch_single(session, s) for s in symbols]
-            fetched = await asyncio.gather(*tasks, return_exceptions=True)
-            for result in fetched:
-                if isinstance(result, PriceData):
-                    results.append(result)
+        live = []
+        for symbol_info in symbols:
+            symbol = symbol_info['symbol']
+            market = symbol_info.get('market', 'FUT')
+            market_type = self.trading_hours_manager.get_market_type(symbol, market)
+            if not self.trading_hours_manager.is_trading_time(market_type):
+                latest = self.db.get_latest_price(symbol, market=market, frequency='1m')
+                if latest:
+                    logging.info(f"[FuturesFetcher] {symbol} 非交易时段，使用 DB 缓存")
+                    results.append(latest)
+                continue
+            live.append(symbol_info)
+        if live:
+            results.extend(await self._fetch_sina_futures(live))
         return results
 
-    async def _fetch_single(
-        self, session: aiohttp.ClientSession, symbol_info: dict,
-    ) -> Optional[PriceData]:
-        symbol = symbol_info['symbol']
-        market = symbol_info.get('market', 'FUT')
-
-        market_type = self.trading_hours_manager.get_market_type(symbol, market)
-        if not self.trading_hours_manager.is_trading_time(market_type):
-            latest = self.db.get_latest_price(symbol, market=market, frequency='1m')
-            if latest:
-                logging.info(f"[FuturesFetcher] {symbol} 非交易时段，使用 DB 缓存")
-                return latest
-            return None
-
-        url = f"{self.api_config['itick']['base_url']}/stock/kline"
-        params = {'region': market, 'code': symbol, 'kType': '1'}
-        headers = {
-            'accept': 'application/json',
-            'token': self.api_config['itick']['token'],
-        }
+    async def _fetch_sina_futures(self, symbols: List[dict]) -> List[PriceData]:
+        codes = [sina_code(info['symbol'], info.get('market', 'FUT')) for info in symbols]
         try:
-            await self._itick_limiter.acquire()
-            async with session.get(url, params=params, headers=headers) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    if 'data' in data and len(data['data']) >= 1:
-                        latest = data['data'][-1]
-                        return PriceData(
-                            symbol=symbol,
-                            market=market,
-                            timestamp=datetime.now(),
-                            open=latest.get('open', 0),
-                            high=latest.get('high', 0),
-                            low=latest.get('low', 0),
-                            close=latest.get('close', 0),
-                            volume=latest.get('volume', 0),
-                            frequency='1m',
-                        )
-                else:
-                    logging.error(f"[FuturesFetcher] iTick API 错误: {response.status}")
+            quotes = await fetch_sina_quotes(codes)
         except Exception as e:
-            logging.error(f"[FuturesFetcher] iTick 获取 {symbol} 失败: {e}")
-        return None
+            logging.error(f"[FuturesFetcher] 新浪行情获取失败: {e}")
+            return []
+        prices = []
+        for info in symbols:
+            code = sina_code(info['symbol'], info.get('market', 'FUT'))
+            fields = quotes.get(code)
+            if not fields:
+                logging.error(f"[FuturesFetcher] 新浪未返回 {info.get('name', info['symbol'])}")
+                continue
+            price = price_from_fields(info['symbol'], info.get('market', 'FUT'), fields)
+            if price is None:
+                logging.error(f"[FuturesFetcher] 新浪报价无效 {info.get('name', info['symbol'])}")
+                continue
+            prices.append(price)
+        logging.info(f"[FuturesFetcher] 新浪行情 {len(prices)}/{len(symbols)}")
+        return prices
 
     async def fetch_historical_data(
         self,
