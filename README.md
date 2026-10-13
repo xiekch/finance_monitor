@@ -86,7 +86,8 @@ WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=aaa
 
 # ── X / 微博 AI 简报（config/social.py）──
 TWITTERAPI_IO_KEY=...                 # X 数据源 twitterapi.io（x_briefing 必填）
-DASHSCOPE_API_KEY=...                 # 通义千问 / DashScope（x_briefing、morning_briefing 共用）
+DASHSCOPE_API_KEY=...                 # 通义千问 / DashScope（config/social.py 选 tongyi 时必填）
+CURSOR_API_KEY=...                    # config/social.py 选 cursor 时必填，Cloud Agents API key
 WEIBO_ACCESS_TOKEN=...                # 微博 Open API（weibo_briefing 必填）
 X_BRIEFING_WEBHOOK_URL=...            # 可选，X 简报专用 webhook（逗号分隔多个）
 
@@ -185,7 +186,7 @@ python3 -m venv .venv
 
 按 cron 从白名单账号拉取推文 → LLM 聚合成 markdown 简报 → 企微推送。调度见 `config/schedule.py`，抓取与 LLM 参数见 `config/social.py`。简报内容仅来自本次 API 拉取；原始推文与简报均落 SQLite（供早报等其它 task 读取）。
 
-所需环境变量：`TWITTERAPI_IO_KEY`、`DASHSCOPE_API_KEY`；可选 `X_BRIEFING_WEBHOOK_URL`（见上方配置表）。
+所需环境变量：`TWITTERAPI_IO_KEY`，以及当前 LLM 后端对应的密钥（`config/social.py` 里 `_LLM_PROVIDER=tongyi` 用 `DASHSCOPE_API_KEY`，`cursor` 用 `CURSOR_API_KEY`）；可选 `X_BRIEFING_WEBHOOK_URL`（见上方配置表）。
 
 ### 配置位置 `config/social.py`
 
@@ -214,7 +215,7 @@ python3 -m venv .venv
 
 `morning_briefing` task：读库中社交帖 + 监控标的日 K → LLM 合成 → 企微推送 + 微信公众号发布。配置见 `config/morning_briefing.py`。运行命令见上方「运行示例」。
 
-所需环境变量：`DASHSCOPE_API_KEY`、`WECHAT_MP_APP_ID`、`WECHAT_MP_APP_SECRET`、`WECHAT_MP_THUMB_MEDIA_ID`；可选 `MORNING_WEBHOOK_URL`（见上方配置表）。
+所需环境变量：当前 LLM 后端对应的密钥（`tongyi` 用 `DASHSCOPE_API_KEY`，`cursor` 用 `CURSOR_API_KEY`）、`WECHAT_MP_APP_ID`、`WECHAT_MP_APP_SECRET`、`WECHAT_MP_THUMB_MEDIA_ID`；可选 `MORNING_WEBHOOK_URL`（见上方配置表）。
 
 ## 扩展
 

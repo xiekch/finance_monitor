@@ -5,6 +5,48 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+# 当前大模型后端。可选 tongyi | cursor。密钥仍从 .env 读取。
+_LLM_PROVIDER = "cursor"
+
+
+def _active_llm_provider() -> dict:
+    """按 _LLM_PROVIDER 选出当前大模型后端，并把对应密钥并进 llm_provider。"""
+    name = _LLM_PROVIDER.strip().lower() or "tongyi"
+    catalog = {
+        "tongyi": {
+            "api_key": os.getenv("DASHSCOPE_API_KEY", ""),
+            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "model": "deepseek-v4-flash",
+            "temperature": 0.3,
+            # thinking 模型 reasoning_tokens 占大头（qwen3.5-flash 实测 7700+），
+            # 给 16384 兜底，否则会截在 answer 半路
+            "max_tokens": 16384,
+            # deepseek-v4-flash 比 qwen 快，但仍给 180s 兜底以防 prompt 大时排队
+            "timeout_sec": 180,
+            # DashScope qwen3 系列 thinking 默认开启，占 80%+ output tokens。
+            # 关掉省 token 和时间，但可能损失主题聚合质量（需评测）。
+            # - None: 不传该字段（沿用模型默认）
+            # - False: 显式关闭（仅 qwen3 系列生效；deepseek 等会忽略）
+            # - True: 显式开启
+            "enable_thinking": True,
+        },
+        "cursor": {
+            "api_key": os.getenv("CURSOR_API_KEY", ""),
+            "base_url": os.getenv("CURSOR_API_BASE", "https://api.cursor.com").rstrip("/"),
+            "model": os.getenv("CURSOR_MODEL", "composer-2.5"),
+            # 云端 agent 含排队和虚拟机启动，比直连 chat 接口更慢
+            "timeout_sec": int(os.getenv("CURSOR_TIMEOUT_SEC", "300")),
+            "poll_interval_sec": float(os.getenv("CURSOR_POLL_INTERVAL_SEC", "3")),
+        },
+    }
+    if name not in catalog:
+        raise RuntimeError(
+            f"llm provider={name} 不受支持，可选: {', '.join(sorted(catalog))}"
+        )
+    return {"name": name, **catalog[name]}
+
+
 # X 简报专用企微 webhook（可选，逗号分隔）；未配置时 fallback 到 WECOM_CONFIG
 X_BRIEFING_WEBHOOK_URLS: list[str] = [
     u.strip() for u in os.getenv('X_BRIEFING_WEBHOOK_URL', '').split(',') if u.strip()
@@ -60,26 +102,9 @@ SOCIAL_CONFIG = {
         "search_limit": 80,
     },
 
-    # LLM
-    # 走 OpenAI 兼容协议调 DashScope；换 provider 时改 base_url + api_key_env + model
-    "llm_provider": {
-        "name": "tongyi",
-        "api_key": os.getenv("DASHSCOPE_API_KEY", ""),
-        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "model": "deepseek-v4-flash",
-        "temperature": 0.3,
-        # thinking 模型 reasoning_tokens 占大头（qwen3.5-flash 实测 7700+），
-        # 给 16384 兜底，否则会截在 answer 半路
-        "max_tokens": 16384,
-        # deepseek-v4-flash 比 qwen 快，但仍给 180s 兜底以防 prompt 大时排队
-        "timeout_sec": 180,
-        # DashScope qwen3 系列 thinking 默认开启，占 80%+ output tokens。
-        # 关掉省 token 和时间，但可能损失主题聚合质量（需评测）。
-        # - None: 不传该字段（沿用模型默认）
-        # - False: 显式关闭（仅 qwen3 系列生效；deepseek 等会忽略）
-        # - True: 显式开启
-        "enable_thinking": True,
-    },
+    # LLM。后端由 _LLM_PROVIDER 选择：tongyi（阿里百炼）或 cursor。
+    # cursor 走 Cloud Agents REST（https://api.cursor.com），不经过本机 Cursor 应用。
+    "llm_provider": _active_llm_provider(),
 
     # Prompt 主体
     "prompt_template": (
@@ -118,9 +143,12 @@ SOCIAL_CONFIG = {
 def assert_social_env_ready(check_weibo: bool = False):
     """启动期 fail-fast：缺关键 api_key 时立即报错。"""
     missing = []
-    for prov_key in ("social_provider", "llm_provider"):
-        if not SOCIAL_CONFIG[prov_key].get("api_key"):
-            missing.append(prov_key)
+    if not SOCIAL_CONFIG["social_provider"].get("api_key"):
+        missing.append("social_provider")
+    if not SOCIAL_CONFIG["llm_provider"].get("api_key"):
+        provider_name = SOCIAL_CONFIG["llm_provider"].get("name")
+        key_name = "CURSOR_API_KEY" if provider_name == "cursor" else "DASHSCOPE_API_KEY"
+        missing.append(f"llm_provider ({key_name})")
     if check_weibo:
         if not SOCIAL_CONFIG["weibo_provider"].get("api_key"):
             missing.append("weibo_provider")

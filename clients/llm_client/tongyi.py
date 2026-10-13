@@ -1,40 +1,16 @@
-"""LLM 边界。业务代码只依赖 LLMClient 协议。默认实现走阿里百炼 (ChatTongyi)。"""
+"""阿里百炼 OpenAI 兼容接口。"""
 import logging
 import time
-from dataclasses import dataclass
-from typing import List, Optional, Protocol, Dict, Any
+from typing import Optional
 
-from models.social import SocialPost
-
-
-@dataclass
-class BriefingInput:
-    posts: List[SocialPost]
-    window_hours: int
-    max_chars: int
-    extra_context: str = ""
-
-
-@dataclass
-class BriefingOutput:
-    markdown: str
-    sections: List[Dict[str, Any]]   # [{topic, summary, post_ids}]
-    model: str
-    input_tokens: int
-    output_tokens: int
-
-
-class LLMClient(Protocol):
-    async def summarize(self, payload: BriefingInput) -> BriefingOutput: ...
+from clients.llm_client.base import BriefingInput, BriefingOutput, render_briefing_prompt
 
 
 class TongyiLLMClient:
-    """默认实现：通过 OpenAI 兼容协议调阿里百炼 (DashScope)。
+    """通过 langchain_openai.ChatOpenAI 调 DashScope /compatible-mode/v1。
 
-    走 langchain_openai.ChatOpenAI + base_url 指向 DashScope 的
-    /compatible-mode/v1 端点；比 langchain_community.ChatTongyi
-    省去 deprecated warning、key 字段别名不透传等坑，且能直接拿
-    到标准 usage_metadata。
+    比 langchain_community.ChatTongyi 少 deprecated warning 和 key 字段别名问题，
+    且能直接拿到标准 usage_metadata。
     """
 
     def __init__(self, api_key: str, model: str, max_tokens: int,
@@ -117,50 +93,4 @@ class TongyiLLMClient:
                int(tu.get("output_tokens", 0) or tu.get("completion_tokens", 0))
 
     def _render_prompt(self, payload: BriefingInput) -> str:
-        # 全局按时间正序（旧→新）：跨账号同主题事件相邻出现，便于 LLM 主题聚合；
-        # 最新事件落在 prompt 尾部，对齐 LLM 的 recency bias。
-        # created_at 是 ISO8601 字符串，词典序与时间序一致；空串排最前不影响。
-        ordered = sorted(payload.posts, key=lambda p: p.created_at or "")
-        posts_block = "\n\n".join(
-            f"[{p.author}] {p.created_at}\n{p.text}\n{p.url}"
-            for p in ordered
-        )
-        kwargs = dict(
-            window_hours=payload.window_hours,
-            max_chars=payload.max_chars,
-            posts_block=posts_block,
-        )
-        if payload.extra_context:
-            kwargs["market_block"] = payload.extra_context
-        return self.prompt_template.format(**kwargs)
-
-
-def build_default_llm_client() -> LLMClient:
-    from config.social import SOCIAL_CONFIG
-    llm_cfg = SOCIAL_CONFIG["llm_provider"]
-    return TongyiLLMClient(
-        api_key=llm_cfg["api_key"],
-        base_url=llm_cfg["base_url"],
-        model=llm_cfg["model"],
-        max_tokens=llm_cfg["max_tokens"],
-        temperature=llm_cfg.get("temperature", 0.3),
-        prompt_template=SOCIAL_CONFIG["prompt_template"],
-        timeout_sec=llm_cfg["timeout_sec"],
-        enable_thinking=llm_cfg.get("enable_thinking"),
-    )
-
-
-def build_morning_llm_client() -> LLMClient:
-    from config.social import SOCIAL_CONFIG
-    from config.morning_briefing import MORNING_BRIEFING_CONFIG
-    llm_cfg = SOCIAL_CONFIG["llm_provider"]
-    return TongyiLLMClient(
-        api_key=llm_cfg["api_key"],
-        base_url=llm_cfg["base_url"],
-        model=llm_cfg["model"],
-        max_tokens=llm_cfg["max_tokens"],
-        temperature=llm_cfg.get("temperature", 0.3),
-        prompt_template=MORNING_BRIEFING_CONFIG["prompt_template"],
-        timeout_sec=llm_cfg["timeout_sec"],
-        enable_thinking=llm_cfg.get("enable_thinking"),
-    )
+        return render_briefing_prompt(self.prompt_template, payload)
