@@ -104,7 +104,7 @@ class FetchMorningData(Step):
     async def _fetch_current_prices(
         self, watchlist: List[dict],
     ) -> Dict[Tuple[str, str], PriceData]:
-        """批量拉现价：只要今天的数据；实时优先，再回落今天的 DB 分钟/日线。"""
+        """批量拉现价：只要今天的数据。收盘后仍取新浪收盘价，再回落今天的分钟线或日线。"""
         today = date.today()
         grouped: Dict[str, List[dict]] = {
             "astock": [],

@@ -2,7 +2,7 @@ import aiohttp
 import asyncio
 import logging
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from .base_fetcher import BaseFetcher
 from models.market import PriceData
@@ -24,28 +24,39 @@ class AStockFetcher(BaseFetcher):
         )
     
     async def fetch_realtime_data(self, symbols: List[dict]) -> List[PriceData]:
-        """获取股票实时数据。沪深走新浪批量报价，不再走 iTick。"""
+        """沪深始终走新浪。收盘后新浪仍是当日收盘价；没有报价时再用今天的分钟线。"""
         results = []
-        live_cn = []
+        cn = []
         live_other = []
 
         for symbol_info in symbols:
+            market = symbol_info.get('market', '')
+            if market in ('SH', 'SZ'):
+                cn.append(symbol_info)
+                continue
             market_type = self.trading_hours_manager.get_market_type(
-                symbol_info['symbol'], symbol_info.get('market', '')
+                symbol_info['symbol'], market
             )
             if not self.trading_hours_manager.is_trading_time(market_type):
-                latest_data = self._get_latest_from_db(symbol_info)
+                latest_data = self._today_minute(symbol_info)
                 if latest_data:
                     results.append(latest_data)
                 continue
-            market = symbol_info.get('market', '')
-            if market in ('SH', 'SZ'):
-                live_cn.append(symbol_info)
-            else:
-                live_other.append(symbol_info)
+            live_other.append(symbol_info)
 
-        if live_cn:
-            results.extend(await self._fetch_sina_ashares(live_cn))
+        if cn:
+            priced = await self._fetch_sina_ashares(cn)
+            got = {(p.symbol, p.market) for p in priced}
+            results.extend(priced)
+            for info in cn:
+                if (info['symbol'], info.get('market', '')) in got:
+                    continue
+                latest_data = self._today_minute(info)
+                if latest_data:
+                    logging.info(
+                        f"[AStockFetcher] {info['symbol']} 新浪无报价，使用今天的分钟线"
+                    )
+                    results.append(latest_data)
 
         if live_other:
             async with aiohttp.ClientSession() as session:
@@ -86,6 +97,12 @@ class AStockFetcher(BaseFetcher):
             market=symbol_info.get('market', ''),
             frequency='1m'
         )
+
+    def _today_minute(self, symbol_info: dict) -> Optional[PriceData]:
+        latest = self._get_latest_from_db(symbol_info)
+        if latest is None or latest.timestamp.date() != date.today():
+            return None
+        return latest
     
     async def _fetch_single_stock(self, session: aiohttp.ClientSession, 
                                 symbol_info: dict) -> Optional[PriceData]:

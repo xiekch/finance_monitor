@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from typing import List
+from datetime import date
+from typing import List, Optional
 
 from .base_fetcher import BaseFetcher
 from models.market import PriceData
@@ -18,23 +19,25 @@ class FuturesFetcher(BaseFetcher):
         self.db = MarketDataDB()
 
     async def fetch_realtime_data(self, symbols: List[dict]) -> List[PriceData]:
-        """交易时段走新浪期货连续报价；非交易时段用 DB 里的分钟线。"""
-        results = []
-        live = []
-        for symbol_info in symbols:
-            symbol = symbol_info['symbol']
-            market = symbol_info.get('market', 'FUT')
-            market_type = self.trading_hours_manager.get_market_type(symbol, market)
-            if not self.trading_hours_manager.is_trading_time(market_type):
-                latest = self.db.get_latest_price(symbol, market=market, frequency='1m')
-                if latest:
-                    logging.info(f"[FuturesFetcher] {symbol} 非交易时段，使用 DB 缓存")
-                    results.append(latest)
+        """新浪连续报价。收盘后仍是当日收盘价；没有报价时再用今天的分钟线。"""
+        priced = await self._fetch_sina_futures(symbols) if symbols else []
+        got = {(p.symbol, p.market) for p in priced}
+        results = list(priced)
+        for info in symbols:
+            market = info.get('market', 'FUT')
+            if (info['symbol'], market) in got:
                 continue
-            live.append(symbol_info)
-        if live:
-            results.extend(await self._fetch_sina_futures(live))
+            latest = self._today_minute(info['symbol'], market)
+            if latest:
+                logging.info(f"[FuturesFetcher] {info['symbol']} 新浪无报价，使用今天的分钟线")
+                results.append(latest)
         return results
+
+    def _today_minute(self, symbol: str, market: str) -> Optional[PriceData]:
+        latest = self.db.get_latest_price(symbol, market=market, frequency='1m')
+        if latest is None or latest.timestamp.date() != date.today():
+            return None
+        return latest
 
     async def _fetch_sina_futures(self, symbols: List[dict]) -> List[PriceData]:
         codes = [sina_code(info['symbol'], info.get('market', 'FUT')) for info in symbols]
