@@ -53,21 +53,25 @@ class WeChatNotifier:
         if not content:
             logging.warning("[WeChatNotifier] send_text: 空内容，跳过发送")
             return False
+        return self._send_split("text", content, max_bytes, inter_part_sleep)
+
+    def _send_split(self, msgtype: str, content: str, max_bytes: int,
+                    inter_part_sleep: float) -> bool:
         if len(content.encode("utf-8")) <= max_bytes:
-            return self._post_text(content)
+            return self._post(msgtype, content)
 
         parts = self._split_for_text(content, max_bytes=max_bytes)
         total = len(parts)
         all_ok = True
         for i, part in enumerate(parts, start=1):
             body = f"({i}/{total})\n{part}"
-            ok = self._post_text(body)
+            ok = self._post(msgtype, body)
             if not ok:
                 logging.warning(
                     f"[WeChatNotifier] 分段 {i}/{total} 首发失败，{inter_part_sleep}s 后重试 1 次"
                 )
                 time.sleep(inter_part_sleep)
-                ok = self._post_text(body)
+                ok = self._post(msgtype, body)
                 if not ok:
                     logging.error(
                         f"[WeChatNotifier] 分段 {i}/{total} 重试仍失败，已发段不回滚"
@@ -78,24 +82,29 @@ class WeChatNotifier:
         return all_ok
 
     def _post_text(self, body: str) -> bool:
+        return self._post("text", body)
+
+    def _post(self, msgtype: str, body: str) -> bool:
+        """企微拒收时 HTTP 仍是 200，要看返回体里的 errcode。"""
         headers = {"Content-Type": "application/json"}
-        data = {"msgtype": "text", "text": {"content": body}}
-        payload = json.dumps(data)
+        payload = json.dumps({"msgtype": msgtype, msgtype: {"content": body}})
+        size = len(body.encode("utf-8"))
         all_ok = True
         for url in self.webhook_urls:
             try:
                 response = self.session.post(
                     url, headers=headers, data=payload, timeout=10,
                 )
-                if response.status_code == 200:
-                    logging.info(f"[WeChatNotifier] text 发送成功，字节={len(body.encode('utf-8'))}")
+                errcode = response.json().get("errcode") if response.status_code == 200 else None
+                if errcode == 0:
+                    logging.info(f"[WeChatNotifier] {msgtype} 发送成功，字节={size}")
                 else:
                     logging.error(
-                        f"[WeChatNotifier] text 发送失败: {response.status_code} - {response.text}"
+                        f"[WeChatNotifier] {msgtype} 发送失败: {response.status_code} - {response.text}"
                     )
                     all_ok = False
             except Exception as e:
-                logging.error(f"[WeChatNotifier] text 发送异常: {e}")
+                logging.error(f"[WeChatNotifier] {msgtype} 发送异常: {e}")
                 all_ok = False
         return all_ok
 
@@ -128,35 +137,17 @@ class WeChatNotifier:
             remaining = remaining[split_at:].lstrip()
         return parts
 
-    def send_markdown(self, content: str, max_chars: int = 3500) -> bool:
-        """发送 markdown 类型消息。超长按字符截断并附提示。
+    def send_markdown(
+        self,
+        content: str,
+        max_bytes: int = 4000,
+        inter_part_sleep: float = 1.5,
+    ) -> bool:
+        """发送 markdown 类型消息（链接可点击）。
 
-        企微 markdown 渲染链接为可点击，但样式有限；当前 AI 简报走 send_text，
-        此方法保留备用（如未来想恢复 markdown 推送或别处复用）。
+        企微 markdown 上限 4096 字节。超长时与 send_text 一样按字节拆段依次推送，不截断。
         """
         if not content:
             logging.warning("[WeChatNotifier] send_markdown: 空内容，跳过发送")
             return False
-        body = content
-        if len(body) > max_chars:
-            body = body[:max_chars] + "\n\n_（内容过长已截断，完整版见 SQLite briefings 表）_"
-        headers = {"Content-Type": "application/json"}
-        data = {"msgtype": "markdown", "markdown": {"content": body}}
-        payload = json.dumps(data)
-        all_ok = True
-        for url in self.webhook_urls:
-            try:
-                response = self.session.post(
-                    url, headers=headers, data=payload, timeout=10,
-                )
-                if response.status_code == 200:
-                    logging.info(f"[WeChatNotifier] markdown 发送成功，长度={len(body)}")
-                else:
-                    logging.error(
-                        f"[WeChatNotifier] markdown 发送失败: {response.status_code} - {response.text}"
-                    )
-                    all_ok = False
-            except Exception as e:
-                logging.error(f"[WeChatNotifier] markdown 发送异常: {e}")
-                all_ok = False
-        return all_ok
+        return self._send_split("markdown", content, max_bytes, inter_part_sleep)
