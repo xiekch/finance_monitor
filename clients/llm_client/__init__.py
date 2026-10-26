@@ -8,6 +8,7 @@ from clients.llm_client.base import (
 from clients.llm_client.cursor import CursorLLMClient
 from clients.llm_client.factory import (
     build_default_llm_client,
+    build_investment_llm_client,
     build_llm_client,
     build_morning_llm_client,
     client_from_config,
@@ -21,6 +22,7 @@ __all__ = [
     "LLMClient",
     "TongyiLLMClient",
     "build_default_llm_client",
+    "build_investment_llm_client",
     "build_llm_client",
     "build_morning_llm_client",
     "client_from_config",

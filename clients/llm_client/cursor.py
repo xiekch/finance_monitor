@@ -12,12 +12,13 @@ _TERMINAL_STATUSES = {"FINISHED", "ERROR", "CANCELLED", "EXPIRED"}
 
 
 class CursorLLMClient:
-    """创建无仓库 agent，轮询 run，取最终文本。"""
+    """创建 agent（默认无仓库），轮询 run，取最终文本。"""
 
     def __init__(self, api_key: str, model: str, prompt_template: str,
                  base_url: str = "https://api.cursor.com",
                  timeout_sec: int = 300, poll_interval_sec: float = 3,
-                 session: Optional[requests.Session] = None):
+                 session: Optional[requests.Session] = None,
+                 repos: Optional[list] = None):
         self.api_key = api_key
         self.model = model
         self.prompt_template = prompt_template
@@ -25,6 +26,7 @@ class CursorLLMClient:
         self.timeout_sec = timeout_sec
         self.poll_interval_sec = poll_interval_sec
         self.session = session or self._new_session(api_key)
+        self.repos = repos
 
     @staticmethod
     def _new_session(api_key: str) -> requests.Session:
@@ -64,6 +66,27 @@ class CursorLLMClient:
             output_tokens=out_tok,
         )
 
+    async def complete(self, prompt: str) -> str:
+        """发送完整提示词，返回 agent 的最终文本。"""
+        if not self.api_key:
+            raise RuntimeError("CURSOR_API_KEY 未配置")
+        logging.info(
+            f"[CursorLLMClient] complete model={self.model} repos={bool(self.repos)} "
+            f"prompt_chars={len(prompt)}"
+        )
+        logging.info(f"[CursorLLMClient] prompt:\n{prompt}")
+        t0 = time.time()
+        agent_id, run = self._create_and_wait(prompt)
+        text = (run.get("result") or "").strip()
+        in_tok, out_tok = self._fetch_usage(agent_id, run["id"])
+        ms = int((time.time() - t0) * 1000)
+        logging.info(
+            f"[CursorLLMClient] model={self.model} agent={agent_id} run={run['id']} "
+            f"in={in_tok} out={out_tok} elapsed={ms}ms output_chars={len(text)}"
+        )
+        logging.info(f"[CursorLLMClient] output:\n{text}")
+        return text
+
     def _create_and_wait(self, prompt: str) -> "tuple[str, dict]":
         created = self._create_agent(prompt)
         agent = created["agent"]
@@ -97,6 +120,8 @@ class CursorLLMClient:
             "prompt": {"text": prompt},
             "model": {"id": self.model},
         }
+        if self.repos:
+            body["repos"] = self.repos
         last_err: Optional[Exception] = None
         for attempt in range(2):
             try:
