@@ -21,7 +21,10 @@ from steps.notify import (
     XBriefingNotifyStep,
     MorningBriefingNotifyStep,
     MarketBriefingNotifyStep,
+    InvestmentNotifyStep,
 )
+from steps.investment_advice import AdviceStep
+from steps.investment_review import ReviewStep
 from steps.morning_ai import MorningAIStep
 from steps.market_briefing import MarketBriefingStep
 from steps.storage import StorageStep
@@ -79,6 +82,10 @@ TASK_REGISTRY: dict[str, Callable[[], Step]] = {
         lambda: FetchXPosts() | StorageStep() | FetchMorningData()
         | MorningAIStep() | Fork(StorageStep(), MorningBriefingNotifyStep(), PublishMPStep())
     ),
+    "investment_review_due": lambda: ReviewStep(kind="due") | InvestmentNotifyStep(),
+    "investment_advice": lambda: AdviceStep() | InvestmentNotifyStep(),
+    "investment_review_weekly": lambda: ReviewStep(kind="weekly") | InvestmentNotifyStep(),
+    "investment_review_monthly": lambda: ReviewStep(kind="monthly") | InvestmentNotifyStep(),
 }
 
 TASK_KEYS: list[str] = list(TASK_REGISTRY)
@@ -98,6 +105,12 @@ TASK_GROUPS: dict[str, list[str]] = {
         "x_briefing",
         "market_briefing",
         "morning_briefing",
+    ],
+    "investment": [
+        "investment_review_due",
+        "investment_advice",
+        "investment_review_weekly",
+        "investment_review_monthly",
     ],
 }
 

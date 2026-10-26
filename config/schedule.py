@@ -78,4 +78,21 @@ TASK_SCHEDULE = {
         'type': 'cron',
         'kwargs': {'hour': 9, 'minute': 35},
     },
+    # 投资建议与复盘：结案排在建议之前，新建议能读到刚写下的结案和经验
+    'investment_review_due': {
+        'type': 'cron',
+        'kwargs': {'hour': 8, 'minute': 20},
+    },
+    'investment_advice': {
+        'type': 'cron',
+        'kwargs': {'hour': 9, 'minute': 0},
+    },
+    'investment_review_weekly': {
+        'type': 'cron',
+        'kwargs': {'day_of_week': 'mon', 'hour': 21, 'minute': 0},
+    },
+    'investment_review_monthly': {
+        'type': 'cron',
+        'kwargs': {'day': 1, 'hour': 21, 'minute': 10},
+    },
 }
