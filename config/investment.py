@@ -39,30 +39,37 @@ ADVICE_PROMPT_TEMPLATE = """今天是 {today}（北京时间）。你是一名�
 - expiry_date 是具体日期，不晚于 {latest_expiry}。
 - 价格字段只写数字，不带单位和千分位；币种写在 currency。
 - 正文五节写给人看：理由写清催化剂和依据，失效条件写清什么情况下这条建议作废。
-- 每条建议用 <<<ADVICE>>> 和 <<<END>>> 包裹，块外不要写任何内容。格式：
+- 只输出 Markdown，不要用代码块包裹，不要写开场白和结尾。每条建议以一级标题「# 建议 N」开头，紧接字段列表，再用二级标题写五节正文。一级标题只用于分隔建议，正文里不要再出现一级标题。格式：
 
-<<<ADVICE>>>
-symbol: 代码
-name: 名称
-direction: 看多
-expiry_date: YYYY-MM-DD
-currency: USD
-reference_price: 数字
-reference_date: YYYY-MM-DD
-reference_url: https://...
-target_price: 数字
-stop_price: 数字
+# 建议 1
+- symbol: 代码
+- name: 名称
+- direction: 看多
+- expiry_date: YYYY-MM-DD
+- currency: USD
+- reference_price: 数字
+- reference_date: YYYY-MM-DD
+- reference_url: https://...
+- target_price: 数字
+- stop_price: 数字
+
 ## 理由
 ...
+
 ## 目标价
 ...
+
 ## 失效条件
 ...
+
 ## 参考价
 ...
+
 ## 观察条件
 ...
-<<<END>>>
+
+# 建议 2
+...
 """
 
 REVIEW_PROMPT_TEMPLATE = """今天是 {today}（北京时间）。请对下面这条投资建议做「{kind_label}」复盘。

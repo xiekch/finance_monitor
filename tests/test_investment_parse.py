@@ -10,28 +10,44 @@ from steps.investment_parse import (
 
 
 def _block(symbol, expiry="2026-11-09", target=160):
-    return f"""<<<ADVICE>>>
-symbol: {symbol}
-name: 测试
-direction: 看多
-expiry_date: {expiry}
-currency: USD
-reference_price: 140
-reference_date: 2026-10-26
-reference_url: https://example.com/{symbol}
-target_price: {target}
-stop_price: 120
+    return f"""# 建议 {symbol}
+- symbol: {symbol}
+- name: 测试
+- direction: 看多
+- expiry_date: {expiry}
+- currency: USD
+- reference_price: 140
+- reference_date: 2026-10-26
+- reference_url: https://example.com/{symbol}
+- target_price: {target}
+- stop_price: 120
+
 ## 理由
 需求还在。
+
 ## 目标价
 160 附近。
+
 ## 失效条件
 跌破 120。
+
 ## 参考价
 140 收盘。
+
 ## 观察条件
 财报。
-<<<END>>>"""
+"""
+
+
+def test_parse_tolerates_preamble_bold_keys_and_fullwidth_colon():
+    raw = "好的，以下是今天的建议。\n\n" + _block("NVDA").replace(
+        "- symbol: NVDA", "- **symbol**：NVDA"
+    ).replace("- reference_url: https://example.com/NVDA", "- reference_url: <https://example.com/NVDA>")
+    valid, dropped = parse_advice_response(raw, today=date(2026, 10, 26), open_symbols=set())
+    assert dropped == 0
+    assert valid[0].symbol == "NVDA"
+    assert valid[0].reference_url == "https://example.com/NVDA"
+    assert valid[0].sections["观察条件"] == "财报。"
 
 
 def test_parse_drops_invalid_and_already_open():
@@ -73,6 +89,8 @@ def test_advice_prompt_includes_history_only():
     assert "advice/lessons.md" in prompt
     assert "只读" in prompt
     assert "0700.HK" in prompt
+    assert "# 建议 1" in prompt
+    assert "<<<" not in prompt
 
 
 def test_review_prompt_window_stops_at_expiry(advice_md):

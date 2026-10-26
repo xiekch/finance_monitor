@@ -47,27 +47,32 @@ def _run(step, notifier):
     asyncio.run(InvestmentNotifyStep(notifier=notifier).process(items))
 
 
-ADVICE = """<<<ADVICE>>>
-symbol: NVDA
-name: 英伟达
-direction: 看多
-expiry_date: 2026-11-09
-currency: USD
-reference_price: 140
-reference_date: 2026-10-26
-reference_url: https://example.com/nvda
-target_price: 160
+ADVICE = """# 建议 1
+- symbol: NVDA
+- name: 英伟达
+- direction: 看多
+- expiry_date: 2026-11-09
+- currency: USD
+- reference_price: 140
+- reference_date: 2026-10-26
+- reference_url: https://example.com/nvda
+- target_price: 160
+
 ## 理由
 需求还在。
+
 ## 目标价
 160 附近。
+
 ## 失效条件
 跌破 120。
+
 ## 参考价
 140 收盘。
+
 ## 观察条件
 财报。
-<<<END>>>"""
+"""
 
 DUE = """## 复盘 2026-10-28 到期结案
 - 价格：建议时 140，目标价 160，结案时 151。未碰到目标价。来源 https://example.com/close

@@ -19,12 +19,11 @@ from models.advice import (
     AdviceDoc,
     check_review_note,
     doc_from_parts,
-    parse_fields,
     render_advice_markdown,
     validate_advice,
 )
 
-_ADVICE_BLOCK = re.compile(r"<<<ADVICE>>>(.*?)<<<END>>>", re.S)
+_FIELD_LINE = re.compile(r"^\s*[-*]\s*[*`]*([A-Za-z_]+)[*`]*\s*[:：]\s*(.*)$")
 
 
 def build_advice_prompt(today: date, open_summaries: List[str], lessons: List[str]) -> str:
@@ -55,8 +54,8 @@ def parse_advice_response(raw: str, today: date,
     valid: List[AdviceDoc] = []
     dropped = 0
     taken = set(open_symbols)
-    for match in _ADVICE_BLOCK.finditer(raw or ""):
-        doc = _block_to_doc(match.group(1), today)
+    for block in _split_advice_blocks(raw or ""):
+        doc = _block_to_doc(block, today)
         if len(valid) >= MAX_ADVICE:
             dropped += 1
             logging.warning(f"[investment_parse] 超过 {MAX_ADVICE} 条，丢弃 {doc.symbol}")
@@ -75,10 +74,27 @@ def parse_review_response(raw: str, kind: str) -> Optional[str]:
     return check_review_note(raw, kind)
 
 
-def _block_to_doc(block: str, today: date) -> AdviceDoc:
-    lines = block.strip("\n").splitlines()
+def _split_advice_blocks(raw: str) -> List[List[str]]:
+    """每条建议以一级标题「# 」开头，之前的说明文字和 ``` 围栏行都丢掉。"""
+    blocks: List[List[str]] = []
+    for line in raw.splitlines():
+        if line.strip().startswith("```"):
+            continue
+        if line.startswith("# "):
+            blocks.append([])
+        elif blocks:
+            blocks[-1].append(line)
+    return blocks
+
+
+def _block_to_doc(lines: List[str], today: date) -> AdviceDoc:
     split = next((i for i, line in enumerate(lines) if line.startswith("## ")), len(lines))
-    doc = doc_from_parts(parse_fields(lines[:split]), "\n".join(lines[split:]))
+    fields = {}
+    for line in lines[:split]:
+        match = _FIELD_LINE.match(line)
+        if match:
+            fields[match.group(1)] = match.group(2).strip().strip("`<>").strip()
+    doc = doc_from_parts(fields, "\n".join(lines[split:]))
     doc.id = ""
     doc.created_at = today
     doc.status = "open"
