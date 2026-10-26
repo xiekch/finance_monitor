@@ -82,10 +82,10 @@ TASK_REGISTRY: dict[str, Callable[[], Step]] = {
         lambda: FetchXPosts() | StorageStep() | FetchMorningData()
         | MorningAIStep() | Fork(StorageStep(), MorningBriefingNotifyStep(), PublishMPStep())
     ),
-    "investment_review_due": lambda: ReviewStep(kind="due") | InvestmentNotifyStep(),
+    "investment_review_due": lambda: ReviewStep(kind="due"),
     "investment_advice": lambda: AdviceStep() | InvestmentNotifyStep(),
-    "investment_review_weekly": lambda: ReviewStep(kind="weekly") | InvestmentNotifyStep(),
-    "investment_review_monthly": lambda: ReviewStep(kind="monthly") | InvestmentNotifyStep(),
+    "investment_review_weekly": lambda: ReviewStep(kind="weekly"),
+    "investment_review_monthly": lambda: ReviewStep(kind="monthly"),
 }
 
 TASK_KEYS: list[str] = list(TASK_REGISTRY)
