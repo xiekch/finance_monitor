@@ -88,9 +88,10 @@ def test_advice_prompt_includes_history_only():
     assert "不要再发新建议" in prompt
     assert "advice/lessons.md" in prompt
     assert "只读" in prompt
-    assert "0700.HK" in prompt
+    assert "3033.HK" in prompt
     assert "黄金" in prompt and "XAUUSD" in prompt
-    assert "债券" in prompt and "不写收益率" in prompt
+    assert "海外 ETF" in prompt and "行业板块、债券用对应的 ETF" in prompt
+    assert "不写收益率" in prompt
     assert "# 建议 1" in prompt
     assert "<<<" not in prompt
 

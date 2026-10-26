@@ -79,7 +79,6 @@ def test_symbol_dedup_ignores_exchange_suffix_and_case(advice_md):
     assert normalize_symbol("0700.hk") == "0700.HK"
     assert normalize_symbol("msft") == "MSFT"
 
-
 def test_reject_empty_section(advice_md):
     doc = parse_advice_markdown(advice_md())
     doc.sections["观察条件"] = "  "

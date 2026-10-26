@@ -14,7 +14,7 @@ MAX_REVIEWS_PER_RUN = 20
 INVESTMENT_TIMEOUT_SEC = 1500
 DISCLAIMER = "模型生成，非投资建议"
 
-ADVICE_PROMPT_TEMPLATE = """今天是 {today}（北京时间）。你是一名谨慎的投资研究员，请给出 1～{max_advice} 条可以事后对照验证的投资建议。标的自选，A 股、美股、港股、黄金、债券、加密货币、期货都可以。
+ADVICE_PROMPT_TEMPLATE = """今天是 {today}（北京时间）。你是一名谨慎的投资研究员，请给出 1～{max_advice} 条可以事后对照验证的投资建议。标的主要从 A 股（个股和场内 ETF）和海外 ETF 里选，也可以直接看黄金；行业板块、债券用对应的 ETF 表达。
 
 ## 资料来源
 - 自己联网搜索最新行情、新闻、公告和研报，不使用已抓取的行情、调用方提供的行情表或社媒帖子。
@@ -32,8 +32,8 @@ ADVICE_PROMPT_TEMPLATE = """今天是 {today}（北京时间）。你是一名�
 {lessons_block}
 
 ## 输出要求
-- symbol 写法：A 股写 6 位数字代码（如 601857），港股写 4～5 位数字加 .HK（如 0700.HK），美股写 ticker（如 MSFT），期货写交易所合约代码（如 GCZ26），加密货币写 币种-USD（如 BTC-USD），黄金现货写 XAUUSD、黄金 ETF 写基金代码（如 GLD、518880），债券写可交易品种的代码（国债期货合约如 T2612、TLT 等债券 ETF、具体债券的交易代码）。
-- 债券的 reference_price、target_price、stop_price 都写可交易品种的价格，不写收益率；收益率和债券价格方向相反，看多债券即看收益率下行。
+- symbol 写法：A 股个股和 ETF 写 6 位数字代码（如 601857、512480），美股上市的 ETF 写 ticker（如 SOXX、GLD、TLT），其他海外市场的 ETF 写代码加交易所后缀（如港股 3033.HK），黄金写现货代码 XAUUSD（currency 写 USD，价格按美元/盎司）。
+- 行业板块、债券用 ETF 时，name 写「板块或品类（ETF 名）」，如「半导体（半导体ETF）」「美国长债（iShares 20+ Year Treasury）」；价格写 ETF 的成交价，债券不写收益率，看多债券 ETF 即看收益率下行。
 - direction 只能是看多、看空、观望。看多的 target_price 高于 reference_price，看空的低于 reference_price；观望的 target_price 是等待触发的价位。
 - stop_price 可选：失效条件里有明确价位时填写。看多的 stop_price 低于 reference_price，看空的高于 reference_price；观望的 stop_price 与 target_price 分在 reference_price 两侧。
 - reference_price 必须是真实成交价，reference_date 在 {earliest_reference} 至 {today} 之间，reference_url 是能打开的来源链接。
