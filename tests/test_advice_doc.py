@@ -5,6 +5,19 @@ from models.advice import (
 )
 
 
+def test_summary_required_and_short(advice_md):
+    assert "缺少字段 summary" in validate_advice(parse_advice_markdown(advice_md(summary="")))
+    long = parse_advice_markdown(advice_md(summary="很" * 61))
+    assert any("summary" in e for e in validate_advice(long))
+
+
+def test_old_doc_without_summary_roundtrips_without_empty_field(advice_md):
+    text = advice_md().replace("summary: 需求没走弱，财报前看多\n", "")
+    doc = parse_advice_markdown(text)
+    assert doc.summary == ""
+    assert "summary" not in render_advice_markdown(doc)
+
+
 def test_commit_message_uses_name_without_parenthetical(advice_md):
     etf = parse_advice_markdown(advice_md())
     etf.name, etf.direction = "半导体（半导体ETF）", "观望"

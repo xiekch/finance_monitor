@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date
 from pathlib import Path
 from typing import Callable, List
 
 from clients.llm_client.factory import build_investment_llm_client
-from config.investment import ADVICE_ROOT, LESSON_LIMIT
+from config.investment import ADVICE_REPO_REF, ADVICE_REPO_URL, ADVICE_ROOT, LESSON_LIMIT
 from models.advice import AdviceDoc, InvestmentMessage, commit_message, format_price
 from steps.base import Step
 from steps.investment_parse import build_advice_prompt, parse_advice_response
@@ -63,12 +64,13 @@ class AdviceStep(Step):
 
 def format_advice_message(doc: AdviceDoc) -> str:
     stop = f" · 失效价 {format_price(doc.stop_price)}" if doc.stop_price is not None else ""
-    lines = [
+    reason = doc.sections.get("理由", "").strip()
+    first = doc.summary or re.split(r"(?<=[。！？])", reason, maxsplit=1)[0].strip()
+    url = f"{ADVICE_REPO_URL}/blob/{ADVICE_REPO_REF}/advice/{doc.id[:7]}/{doc.id}.md"
+    return "\n".join([
         f"**投资建议 {doc.id}｜{doc.symbol} {doc.name}｜{doc.direction}**",
-        f"参考价 {format_price(doc.reference_price)} {doc.currency}"
-        f"（{doc.reference_date.isoformat()}）[来源]({doc.reference_url})",
-        f"目标价 {format_price(doc.target_price)}{stop} · 到期 {doc.expiry_date.isoformat()}",
-    ]
-    for title in ("理由", "失效条件", "观察条件"):
-        lines.append(f"\n**{title}**\n{doc.sections.get(title, '').strip()}")
-    return "\n".join(lines)
+        f"参考价 {format_price(doc.reference_price)} {doc.currency}（{doc.reference_date.isoformat()}）"
+        f" · 目标价 {format_price(doc.target_price)}{stop} · 到期 {doc.expiry_date.isoformat()}",
+        first,
+        f"[查看全文]({url})",
+    ])

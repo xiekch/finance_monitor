@@ -39,6 +39,7 @@ ADVICE_PROMPT_TEMPLATE = """今天是 {today}（北京时间）。你是一名�
 - reference_price 必须是真实成交价，reference_date 在 {earliest_reference} 至 {today} 之间，reference_url 是能打开的来源链接。
 - expiry_date 是具体日期，不晚于 {latest_expiry}。
 - 价格字段只写数字，不带单位和千分位；币种写在 currency。
+- summary 用一句话写核心判断和触发条件，不超过 60 字，不写开头的价格复述，如「AI 资本开支未降温，财报前回调到 140 以下可分批看多」。
 - 正文五节写给人看：理由写清催化剂和依据，失效条件写清什么情况下这条建议作废。
 - 只输出 Markdown，不要用代码块包裹，不要写开场白和结尾。每条建议以一级标题「# 建议 N」开头，紧接字段列表，再用二级标题写五节正文。一级标题只用于分隔建议，正文里不要再出现一级标题。格式：
 
@@ -46,6 +47,7 @@ ADVICE_PROMPT_TEMPLATE = """今天是 {today}（北京时间）。你是一名�
 - symbol: 代码
 - name: 名称
 - direction: 看多
+- summary: 一句话核心判断
 - expiry_date: YYYY-MM-DD
 - currency: USD
 - reference_price: 数字

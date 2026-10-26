@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 def advice_md():
     def make(day=26, *, symbol="NVDA", direction="看多", status="open", expiry=None,
              reference_price=140, target_price=160, stop_price=120,
-             reference_date=None, reviews=""):
+             reference_date=None, reviews="", summary="需求没走弱，财报前看多"):
         created = date(2026, 10, day)
         expiry = expiry or date(2026, 11, 9)
         ref_date = reference_date or created
@@ -26,6 +26,7 @@ def advice_md():
             f"symbol: {symbol}\n"
             "name: 测试标的\n"
             f"direction: {direction}\n"
+            f"summary: {summary}\n"
             "currency: USD\n"
             f"reference_price: {reference_price}\n"
             f"reference_date: {ref_date.isoformat()}\n"

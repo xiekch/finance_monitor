@@ -14,6 +14,7 @@ def _block(symbol, expiry="2026-11-09", target=160):
 - symbol: {symbol}
 - name: 测试
 - direction: 看多
+- summary: 需求没走弱，财报前看多
 - expiry_date: {expiry}
 - currency: USD
 - reference_price: 140
@@ -92,6 +93,7 @@ def test_advice_prompt_includes_history_only():
     assert "黄金" in prompt and "XAUUSD" in prompt
     assert "海外 ETF" in prompt and "行业板块、债券用对应的 ETF" in prompt
     assert "不写收益率" in prompt
+    assert "- summary:" in prompt
     assert "# 建议 1" in prompt
     assert "<<<" not in prompt
 

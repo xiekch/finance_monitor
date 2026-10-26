@@ -22,14 +22,15 @@ _A_SHARE_PREFIX = re.compile(r"^(SH|SZ|BJ)(?=\d{6}$)")
 _DATE_FIELDS = ("created_at", "expiry_date", "reference_date")
 _PRICE_FIELDS = ("reference_price", "target_price", "stop_price")
 _FIELD_ORDER = (
-    "id", "created_at", "expiry_date", "status", "symbol", "name", "direction",
+    "id", "created_at", "expiry_date", "status", "symbol", "name", "direction", "summary",
     "currency", "reference_price", "reference_date", "reference_url",
     "target_price", "stop_price",
 )
 _REQUIRED = (
-    "created_at", "expiry_date", "symbol", "name", "direction", "currency",
+    "created_at", "expiry_date", "symbol", "name", "direction", "summary", "currency",
     "reference_price", "reference_date", "reference_url", "target_price",
 )
+MAX_SUMMARY_CHARS = 60
 
 
 @dataclass
@@ -41,6 +42,7 @@ class AdviceDoc:
     symbol: str = ""
     name: str = ""
     direction: str = ""
+    summary: str = ""
     currency: str = ""
     reference_price: Optional[float] = None
     reference_date: Optional[date] = None
@@ -120,7 +122,7 @@ def render_advice_markdown(doc: AdviceDoc) -> str:
     head = ["---"]
     for key in _FIELD_ORDER:
         value = getattr(doc, key)
-        if value is None:
+        if value is None or value == "":
             continue
         head.append(f"{key}: {_format_value(value)}")
     head.append("---")
@@ -142,6 +144,8 @@ def validate_advice(doc: AdviceDoc, open_symbols: Iterable[str] = frozenset()) -
     for title in SECTIONS:
         if not doc.sections.get(title, "").strip():
             errors.append(f"章节「{title}」为空")
+    if len(doc.summary) > MAX_SUMMARY_CHARS:
+        errors.append(f"summary 超过 {MAX_SUMMARY_CHARS} 字")
     if doc.direction and doc.direction not in DIRECTIONS:
         errors.append(f"方向非法：{doc.direction}")
     if doc.status not in STATUSES:
