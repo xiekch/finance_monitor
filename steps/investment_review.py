@@ -8,7 +8,7 @@ from typing import Callable, List
 
 from clients.llm_client.factory import build_investment_llm_client
 from config.investment import ADVICE_ROOT, MAX_REVIEWS_PER_RUN
-from models.advice import REVIEW_KINDS, AdviceDoc, InvestmentMessage
+from models.advice import REVIEW_KINDS, AdviceDoc, InvestmentMessage, commit_message
 from steps.base import Step
 from steps.investment_parse import build_review_prompt
 from storage.advice_git import AdviceCommitter
@@ -38,6 +38,7 @@ class ReviewStep(Step):
         logging.info(f"[{self.name}] {today} 档期 {len(cohort)} 份，本次处理 {len(todo)} 份")
 
         messages: List[InvestmentMessage] = []
+        reviewed: List[AdviceDoc] = []
         failed = 0
         for doc in todo:
             try:
@@ -49,11 +50,12 @@ class ReviewStep(Step):
                 logging.error(f"[{self.name}] 复盘 {doc.id} 失败: {e}", exc_info=True)
                 continue
             if updated is not None:
+                reviewed.append(updated)
                 messages.append(InvestmentMessage(format_review_message(updated, self.label)))
 
         notes = []
-        if messages:
-            self.committer.commit(f"advice: {today.isoformat()} {self.label} {len(messages)} 份")
+        if reviewed:
+            self.committer.commit(commit_message(f"advice: {today.isoformat()} {self.label}", reviewed))
             if self.committer.last_error:
                 notes.append(self.committer.last_error)
         if failed:

@@ -1,6 +1,17 @@
 from datetime import date
 
-from models.advice import normalize_symbol, parse_advice_markdown, render_advice_markdown, validate_advice
+from models.advice import (
+    commit_message, normalize_symbol, parse_advice_markdown, render_advice_markdown, validate_advice,
+)
+
+
+def test_commit_message_uses_name_without_parenthetical(advice_md):
+    etf = parse_advice_markdown(advice_md())
+    etf.name, etf.direction = "半导体（半导体ETF）", "观望"
+    bond = parse_advice_markdown(advice_md())
+    bond.name = "美国长债(iShares 20+ Year Treasury)"
+    assert commit_message("advice: 2026-10-26 新增", [etf, bond]) == \
+        "advice: 2026-10-26 新增 半导体 观望、美国长债 看多"
 
 
 def test_roundtrip_keeps_frontmatter_and_sections(advice_md):

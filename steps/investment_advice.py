@@ -8,7 +8,7 @@ from typing import Callable, List
 
 from clients.llm_client.factory import build_investment_llm_client
 from config.investment import ADVICE_ROOT, LESSON_LIMIT
-from models.advice import AdviceDoc, InvestmentMessage, format_price
+from models.advice import AdviceDoc, InvestmentMessage, commit_message, format_price
 from steps.base import Step
 from steps.investment_parse import build_advice_prompt, parse_advice_response
 from storage.advice_git import AdviceCommitter
@@ -48,7 +48,7 @@ class AdviceStep(Step):
                 f"**投资建议 {today}** 生成失败：没有合法建议，丢弃 {dropped} 条，未写入文件"
             )]
 
-        self.committer.commit(f"advice: {today.isoformat()} 新增 {len(saved)} 条")
+        self.committer.commit(commit_message(f"advice: {today.isoformat()} 新增", saved))
         messages = [InvestmentMessage(format_advice_message(doc)) for doc in saved]
         notes = []
         if dropped:

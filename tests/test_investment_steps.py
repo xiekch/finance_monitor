@@ -96,7 +96,7 @@ def test_advice_step_saves_commits_and_pushes(tmp_path: Path):
                       today_fn=lambda: date(2026, 10, 26))
     _run(step, notifier)
     assert (tmp_path / "2026-10" / "2026-10-26-1.md").is_file()
-    assert committer.messages == ["advice: 2026-10-26 新增 1 条"]
+    assert committer.messages == ["advice: 2026-10-26 新增 英伟达 看多"]
     assert len(notifier.sent) == 1
     assert "NVDA" in notifier.sent[0]
     assert notifier.sent[0].rstrip().endswith(DISCLAIMER)
@@ -152,7 +152,7 @@ def test_due_uses_today_at_run_time_and_closes(tmp_path: Path, advice_md):
     _run(step, notifier)
     text = (tmp_path / "2026-10" / f"{saved.id}.md").read_text(encoding="utf-8")
     assert "status: closed" in text
-    assert committer.messages == ["advice: 2026-10-28 到期结案 1 份"]
+    assert committer.messages == ["advice: 2026-10-28 到期结案 测试标的 看多"]
     assert len(notifier.sent) == 1
 
 

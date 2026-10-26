@@ -240,6 +240,14 @@ def format_price(value: float) -> str:
     return str(int(value)) if value.is_integer() else repr(value)
 
 
+def commit_message(prefix: str, docs: List[AdviceDoc]) -> str:
+    return f"{prefix} " + "、".join(f"{_short_name(d)} {d.direction}" for d in docs)
+
+
+def _short_name(doc: AdviceDoc) -> str:
+    return re.split(r"[（(]", doc.name, maxsplit=1)[0].strip() or doc.name or doc.symbol
+
+
 def _format_value(value) -> str:
     if isinstance(value, date):
         return value.isoformat()
