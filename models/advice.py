@@ -11,6 +11,9 @@ DIRECTIONS = ("看多", "看空", "观望")
 STATUSES = ("open", "closed")
 SECTIONS = ("理由", "目标价", "失效条件", "参考价", "观察条件")
 REVIEW_TITLE_PREFIX = "复盘"
+REVIEW_KINDS = {"due": "到期结案", "weekly": "周回溯", "monthly": "月回溯"}
+REVIEW_LINES = ("- 价格：", "- 逻辑：", "- 事件过程：", "- 经验：")
+NO_NEW_FINDING = "NO_NEW_FINDING"
 
 _DATE_FIELDS = ("created_at", "expiry_date", "reference_date")
 _PRICE_FIELDS = ("reference_price", "target_price", "stop_price")
@@ -177,6 +180,34 @@ def validate_advice(doc: AdviceDoc, open_symbols: Iterable[str] = frozenset()) -
     return errors
 
 
+def check_review_note(note: str, kind: str) -> Optional[str]:
+    """校验模型给的复盘节。周/月档的 NO_NEW_FINDING 返回 None；不合格抛 ValueError。"""
+    if kind not in REVIEW_KINDS:
+        raise ValueError(f"未知复盘种类：{kind}")
+    text = (note or "").strip()
+    if text == NO_NEW_FINDING:
+        if kind == "due":
+            raise ValueError("到期结案不能返回 NO_NEW_FINDING")
+        return None
+    start = text.find(f"## {REVIEW_TITLE_PREFIX}")
+    if start < 0:
+        raise ValueError("复盘缺少「## 复盘」标题")
+    lines = text[start:].splitlines()
+    body = [("#" + line) if line.startswith("## ") else line for line in lines[1:]]
+    cleaned = "\n".join([lines[0].strip()] + body).strip()
+    missing = [marker for marker in REVIEW_LINES if marker not in cleaned]
+    if missing:
+        raise ValueError(f"复盘缺少：{'、'.join(missing)}")
+    return cleaned
+
+
+def review_line(review: str, marker: str) -> str:
+    for line in review.splitlines():
+        if line.startswith(marker):
+            return line[len(marker):].strip()
+    return ""
+
+
 def _to_date(raw: str) -> Optional[date]:
     try:
         return date.fromisoformat(raw)
@@ -191,9 +222,13 @@ def _to_float(raw: str) -> Optional[float]:
         return None
 
 
+def format_price(value: float) -> str:
+    return str(int(value)) if value.is_integer() else repr(value)
+
+
 def _format_value(value) -> str:
     if isinstance(value, date):
         return value.isoformat()
     if isinstance(value, float):
-        return str(int(value)) if value.is_integer() else repr(value)
+        return format_price(value)
     return str(value)
