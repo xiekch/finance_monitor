@@ -48,11 +48,11 @@ def build_morning_llm_client() -> LLMClient:
 
 def build_investment_llm_client() -> CursorLLMClient:
     """投资建议要联网搜索并读仓库里的 advice/，只有 cursor 后端满足。"""
-    from config.investment import ADVICE_REPO_REF, ADVICE_REPO_URL
+    from config.investment import ADVICE_REPO_REF, ADVICE_REPO_URL, INVESTMENT_TIMEOUT_SEC
     from config.social import SOCIAL_CONFIG
     cfg = SOCIAL_CONFIG["llm_provider"]
     if cfg.get("name") != "cursor":
         raise RuntimeError("投资建议需要能联网搜索的后端，当前只支持 cursor")
-    client = client_from_config(cfg, "")
+    client = client_from_config({**cfg, "timeout_sec": INVESTMENT_TIMEOUT_SEC}, "")
     client.repos = [{"url": ADVICE_REPO_URL, "startingRef": ADVICE_REPO_REF}]
     return client

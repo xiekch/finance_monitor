@@ -47,6 +47,8 @@ def test_investment_client_requires_cursor_and_mounts_repo(monkeypatch):
     client = build_investment_llm_client()
     assert isinstance(client, CursorLLMClient)
     assert client.repos == [{"url": "https://github.com/xiekch/finance_monitor", "startingRef": "main"}]
+    assert client.timeout_sec == 1500
+    assert SOCIAL_CONFIG["llm_provider"]["timeout_sec"] == 900
     monkeypatch.setitem(SOCIAL_CONFIG, "llm_provider", {"name": "tongyi"})
     with pytest.raises(RuntimeError, match="搜索"):
         build_investment_llm_client()

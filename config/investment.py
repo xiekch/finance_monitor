@@ -10,6 +10,8 @@ LESSON_LIMIT = 30
 MAX_HORIZON_DAYS = 31
 MAX_REFERENCE_AGE_DAYS = 3
 MAX_REVIEWS_PER_RUN = 20
+# 建议要搜索并读仓库，单次实测 7 分钟，比简报的 900 秒留更多余量
+INVESTMENT_TIMEOUT_SEC = 1500
 DISCLAIMER = "模型生成，非投资建议"
 
 ADVICE_PROMPT_TEMPLATE = """今天是 {today}（北京时间）。你是一名谨慎的投资研究员，请给出 1～{max_advice} 条可以事后对照验证的投资建议。标的自选，A 股、美股、港股、加密货币、期货都可以。
@@ -30,8 +32,9 @@ ADVICE_PROMPT_TEMPLATE = """今天是 {today}（北京时间）。你是一名�
 {lessons_block}
 
 ## 输出要求
+- symbol 写法：A 股写 6 位数字代码（如 601857），港股写 4～5 位数字加 .HK（如 0700.HK），美股写 ticker（如 MSFT），期货写交易所合约代码（如 GCZ26），加密货币写 币种-USD（如 BTC-USD）。
 - direction 只能是看多、看空、观望。看多的 target_price 高于 reference_price，看空的低于 reference_price；观望的 target_price 是等待触发的价位。
-- stop_price 可选：失效条件里有明确价位时填写。看多的 stop_price 低于 reference_price，看空的高于 reference_price。
+- stop_price 可选：失效条件里有明确价位时填写。看多的 stop_price 低于 reference_price，看空的高于 reference_price；观望的 stop_price 与 target_price 分在 reference_price 两侧。
 - reference_price 必须是真实成交价，reference_date 在 {earliest_reference} 至 {today} 之间，reference_url 是能打开的来源链接。
 - expiry_date 是具体日期，不晚于 {latest_expiry}。
 - 价格字段只写数字，不带单位和千分位；币种写在 currency。

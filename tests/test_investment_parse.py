@@ -72,6 +72,7 @@ def test_advice_prompt_includes_history_only():
     assert "不要再发新建议" in prompt
     assert "advice/lessons.md" in prompt
     assert "只读" in prompt
+    assert "0700.HK" in prompt
 
 
 def test_review_prompt_window_stops_at_expiry(advice_md):

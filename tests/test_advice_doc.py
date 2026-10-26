@@ -1,6 +1,6 @@
 from datetime import date
 
-from models.advice import parse_advice_markdown, render_advice_markdown, validate_advice
+from models.advice import normalize_symbol, parse_advice_markdown, render_advice_markdown, validate_advice
 
 
 def test_roundtrip_keeps_frontmatter_and_sections(advice_md):
@@ -44,6 +44,15 @@ def test_watch_allows_target_on_either_side(advice_md):
     assert validate_advice(doc) == []
 
 
+def test_watch_stop_must_be_opposite_target(advice_md):
+    below = parse_advice_markdown(advice_md(direction="观望", target_price=130, stop_price=150))
+    above = parse_advice_markdown(advice_md(direction="观望", target_price=150, stop_price=130))
+    assert validate_advice(below) == []
+    assert validate_advice(above) == []
+    same_side = parse_advice_markdown(advice_md(direction="观望", target_price=130, stop_price=120))
+    assert any("失效" in e for e in validate_advice(same_side))
+
+
 def test_reject_stale_or_future_reference(advice_md):
     assert validate_advice(parse_advice_markdown(advice_md(reference_date=date(2026, 10, 23)))) == []
     stale = parse_advice_markdown(advice_md(reference_date=date(2026, 10, 22)))
@@ -61,6 +70,14 @@ def test_reject_expiry_beyond_31_days(advice_md):
 def test_reject_symbol_already_open(advice_md):
     doc = parse_advice_markdown(advice_md())
     assert any("标的" in e for e in validate_advice(doc, open_symbols={"NVDA"}))
+
+
+def test_symbol_dedup_ignores_exchange_suffix_and_case(advice_md):
+    for written in ("601857.SS", "sh601857", "SH601857", " 601857 "):
+        doc = parse_advice_markdown(advice_md(symbol=written))
+        assert any("标的" in e for e in validate_advice(doc, open_symbols={"601857"})), written
+    assert normalize_symbol("0700.hk") == "0700.HK"
+    assert normalize_symbol("msft") == "MSFT"
 
 
 def test_reject_empty_section(advice_md):

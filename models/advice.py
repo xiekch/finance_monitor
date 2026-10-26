@@ -1,6 +1,7 @@
 """投资建议文档：文首字段 + 五节正文 + 追加的复盘。"""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -14,6 +15,9 @@ REVIEW_TITLE_PREFIX = "复盘"
 REVIEW_KINDS = {"due": "到期结案", "weekly": "周回溯", "monthly": "月回溯"}
 REVIEW_LINES = ("- 价格：", "- 逻辑：", "- 事件过程：", "- 经验：")
 NO_NEW_FINDING = "NO_NEW_FINDING"
+
+_A_SHARE_SUFFIX = re.compile(r"(?<=^\d{6})\.(SS|SH|SZ|BJ)$")
+_A_SHARE_PREFIX = re.compile(r"^(SH|SZ|BJ)(?=\d{6}$)")
 
 _DATE_FIELDS = ("created_at", "expiry_date", "reference_date")
 _PRICE_FIELDS = ("reference_price", "target_price", "stop_price")
@@ -173,11 +177,21 @@ def validate_advice(doc: AdviceDoc, open_symbols: Iterable[str] = frozenset()) -
                 errors.append("看空目标价必须低于参考价")
             if stop is not None and stop <= ref:
                 errors.append("看空失效价必须高于参考价")
+        elif doc.direction == "观望" and stop is not None:
+            if (target - ref) * (stop - ref) >= 0:
+                errors.append("观望失效价必须与目标价分居参考价两侧")
 
-    taken = {s.strip().upper() for s in open_symbols}
-    if doc.symbol and doc.symbol.strip().upper() in taken:
+    taken = {normalize_symbol(s) for s in open_symbols}
+    if doc.symbol and normalize_symbol(doc.symbol) in taken:
         errors.append(f"标的 {doc.symbol} 已有未到期建议")
     return errors
+
+
+def normalize_symbol(symbol: str) -> str:
+    """去重用：大写，去掉 A 股的交易所前后缀（601857.SS / SH601857 → 601857）。"""
+    s = symbol.strip().upper()
+    s = _A_SHARE_SUFFIX.sub("", s)
+    return _A_SHARE_PREFIX.sub("", s)
 
 
 def check_review_note(note: str, kind: str) -> Optional[str]:
