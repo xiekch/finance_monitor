@@ -2,7 +2,7 @@ import asyncio
 from datetime import date
 from pathlib import Path
 
-from config.investment import ADVICE_REPO_REF, ADVICE_REPO_URL, DISCLAIMER
+from config.investment import DISCLAIMER
 from models.advice import parse_advice_markdown
 from steps.investment_advice import AdviceStep, format_advice_message
 from steps.investment_review import ReviewStep
@@ -103,23 +103,25 @@ def test_advice_step_saves_commits_and_pushes(tmp_path: Path):
     assert notifier.sent[0].rstrip().endswith(DISCLAIMER)
 
 
-def test_advice_message_is_summary_with_link(advice_md):
+def test_advice_message_inlines_full_sections(advice_md):
     doc = parse_advice_markdown(advice_md())
     doc.id = "2026-10-26-1"
     doc.sections["理由"] = "需求还在。订单排到明年。"
     text = format_advice_message(doc)
     assert "需求没走弱，财报前看多" in text
-    assert "需求还在" not in text
-    assert "失效条件" not in text and "观察条件" not in text
-    assert f"{ADVICE_REPO_URL}/blob/{ADVICE_REPO_REF}/advice/2026-10/2026-10-26-1.md" in text
+    assert "需求还在。订单排到明年。" in text
+    assert "失效条件" in text and "观察条件" in text
+    assert "github.com" not in text
+    assert "查看全文" not in text
 
 
-def test_advice_message_without_summary_falls_back_to_first_sentence(advice_md):
+def test_advice_message_without_summary_still_has_sections(advice_md):
     doc = parse_advice_markdown(advice_md())
     doc.id, doc.summary = "2026-10-26-1", ""
     doc.sections["理由"] = "需求还在。订单排到明年。"
     text = format_advice_message(doc)
-    assert "需求还在。" in text and "订单排到明年" not in text
+    assert "需求还在。订单排到明年。" in text
+    assert text.startswith("**投资建议")
 
 
 def test_advice_failure_pushes_error_and_writes_nothing(tmp_path: Path):
