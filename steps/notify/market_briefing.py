@@ -27,7 +27,7 @@ class MarketBriefingNotifyStep(BaseNotifyStep):
             logging.warning(f"[{self.name}] 行情早报为空，跳过")
             return
         logging.info(f"[{self.name}] 推送行情早报 chars={len(markdown)}")
-        ok = self.notifier.send_text(markdown)
+        ok = self.notifier.send_markdown(markdown)
         if ok:
             logging.info(f"[{self.name}] 行情早报推送成功")
         else:

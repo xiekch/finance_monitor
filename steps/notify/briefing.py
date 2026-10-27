@@ -10,8 +10,15 @@ from config.morning_briefing import MORNING_WEBHOOK_URLS
 class BriefingNotifyStep(BaseNotifyStep):
     """AI 简报推送。"""
 
-    def __init__(self, notifier: WeChatNotifier | None = None, name: str = "BriefingNotifyStep"):
+    def __init__(
+        self,
+        notifier: WeChatNotifier | None = None,
+        name: str = "BriefingNotifyStep",
+        *,
+        as_markdown: bool = False,
+    ):
         super().__init__(notifier=notifier, name=name)
+        self.as_markdown = as_markdown
 
     async def process(self, items: list) -> list:
         for item in items:
@@ -24,7 +31,8 @@ class BriefingNotifyStep(BaseNotifyStep):
         logging.info(
             f"[{self.name}] 推送 AI 简报 degraded={briefing.degraded} chars={len(markdown)}"
         )
-        ok = self.notifier.send_text(markdown)
+        send = self.notifier.send_markdown if self.as_markdown else self.notifier.send_text
+        ok = send(markdown)
         if ok:
             logging.info(f"[{self.name}] AI 简报推送成功")
         else:
@@ -44,4 +52,5 @@ class MorningBriefingNotifyStep(BriefingNotifyStep):
         super().__init__(
             notifier=WeChatNotifier(MORNING_WEBHOOK_URLS or None),
             name="MorningBriefingNotifyStep",
+            as_markdown=True,
         )
