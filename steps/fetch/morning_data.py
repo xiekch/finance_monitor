@@ -29,6 +29,15 @@ _GROUPS: List[Tuple[str, Tuple[str, ...]]] = [
 
 _A_STOCK_MARKETS = ("SH", "SZ")
 _YFINANCE_MARKETS = ("US", "NASDAQ", "NYSE", "HK", "JP", "KR")
+# 昨收最多早于行情日 5 天：覆盖周五收盘在下周二使用，以及往前再一根日线。
+# 库里停在更早的日期时，涨跌幅会变成多日累计，不能写进早报。
+_MAX_PREV_GAP_DAYS = 5
+# 主要指数单日很少超过这个幅度。更大的数多半是冻结点位或昨收串了多日。
+_INDEX_MOVE_LIMIT_PCT = 8.0
+_MAJOR_INDEX_SYMBOLS = frozenset({
+    "^GSPC", "^DJI", "^NDX", "^N225", "^KS11",
+    "000001", "000300", "399001", "399006", "000688",
+})
 
 
 class FetchMorningData(Step):
@@ -172,11 +181,12 @@ class FetchMorningData(Step):
 
     @staticmethod
     def _pick_prev_close(
-        rows: List[PriceData], before: date,
+        rows: List[PriceData], before: date, current: Optional[PriceData] = None,
     ) -> Optional[PriceData]:
-        """取严格早于 before 的最近一根日线，作为昨收。
+        """取现价上一交易日的收盘。
 
         同一天可能有多条记录，按 date 去重后取该日最后一条。
+        最新一根的收盘若就是本次现价，那根是当前这笔行情，再往前一根才是昨收。
         """
         if not rows:
             return None
@@ -184,17 +194,75 @@ class FetchMorningData(Step):
         by_date: dict = {}
         for row in rows:
             by_date[row.timestamp.date()] = row
+        dates = sorted(by_date)
+        if (
+            current is not None
+            and by_date[dates[-1]].close == current.close
+            and len(dates) >= 2
+        ):
+            return by_date[dates[-2]]
 
-        candidates = [d for d in sorted(by_date.keys()) if d < before]
+        candidates = [d for d in dates if d < before]
         if not candidates:
             return None
-        return by_date[candidates[-1]]
+        chosen = by_date[candidates[-1]]
+        if current is not None and chosen.close == current.close:
+            earlier = [d for d in candidates if d < chosen.timestamp.date()]
+            if not earlier:
+                return None
+            return by_date[earlier[-1]]
+        return chosen
+
+    @staticmethod
+    def _prev_is_recent(previous: Optional[PriceData], before: date) -> bool:
+        if previous is None:
+            return False
+        gap = (before - previous.timestamp.date()).days
+        return 0 <= gap <= _MAX_PREV_GAP_DAYS
+
+    @staticmethod
+    def _choose_prev(
+        db_prev: Optional[PriceData],
+        fresh_prev: Optional[PriceData],
+        before: date,
+    ) -> Optional[PriceData]:
+        """过期的库内日线让位给本次行情里更近的昨收。同一天优先用本次行情。"""
+        fresh_ok = FetchMorningData._prev_is_recent(fresh_prev, before)
+        db_ok = FetchMorningData._prev_is_recent(db_prev, before)
+        if fresh_ok and (
+            not db_ok or fresh_prev.timestamp.date() >= db_prev.timestamp.date()
+        ):
+            return fresh_prev
+        if db_ok:
+            return db_prev
+        if fresh_prev is None:
+            return db_prev
+        if db_prev is None or fresh_prev.timestamp.date() >= db_prev.timestamp.date():
+            return fresh_prev
+        return db_prev
+
+    def _peek_fresh_daily(self, item: dict) -> Optional[List[PriceData]]:
+        if item["market"] not in _YFINANCE_MARKETS:
+            return None
+        end = datetime.now()
+        start = end - timedelta(days=14)
+        return self.us_fetcher.cached_daily_bars(
+            item["symbol"], item["market"], start, end,
+        )
+
+    def _store_daily_bars(self, bars: List[PriceData]) -> None:
+        for bar in bars:
+            if bar.frequency != "1d" or getattr(bar, "quote_fallback", False):
+                continue
+            self.market_db.save_price_data(bar)
 
     async def _get_prev_close(
         self, item: dict, current: Optional[PriceData],
     ) -> Optional[PriceData]:
-        """现价对应的昨收：严格早于现价日期（或今天）的最近日线收盘价。"""
-        before = current.timestamp.date() if current is not None else date.today()
+        """现价上一交易日的收盘。停更多日的日线不能拿来算一日涨跌幅。"""
+        if current is None:
+            return None
+        before = current.timestamp.date()
         symbol, market = item["symbol"], item["market"]
         end = datetime.now()
         start = end - timedelta(days=14)
@@ -202,17 +270,96 @@ class FetchMorningData(Step):
             symbol=symbol, market=market, frequency="1d",
             start_date=start, end_date=end,
         )
-        previous = self._pick_prev_close(db_rows, before)
-        if previous is not None:
-            return previous
+        db_prev = self._pick_prev_close(db_rows, before, current)
+        cached_rows = self._peek_fresh_daily(item)
+        fresh_prev = self._pick_prev_close(cached_rows or [], before, current)
+        chosen = self._choose_prev(db_prev, fresh_prev, before)
+        if self._prev_is_recent(chosen, before):
+            self._maybe_store_fresher_daily(
+                item, db_prev, chosen, fresh_prev, cached_rows, before,
+            )
+            return chosen
 
-        fetched = await self._fetch_recent_daily(item)
-        if not fetched:
+        if cached_rows is not None:
+            self._log_missing_prev(symbol, market, chosen, before)
             return None
 
-        for d in fetched:
-            self.market_db.save_price_data(d)
-        return self._pick_prev_close(fetched, before)
+        self._log_refetch(symbol, market, chosen, before)
+        fetched = await self._fetch_recent_daily(item)
+        fetched_prev = self._pick_prev_close(fetched or [], before, current)
+        if self._prev_is_recent(fetched_prev, before):
+            self._store_daily_bars(fetched or [])
+            logging.info(
+                f"[{self.name}] {symbol}({market}) 已补上 "
+                f"{fetched_prev.timestamp.date()} 日线，用作昨收"
+            )
+            return fetched_prev
+        self._log_missing_prev(symbol, market, fetched_prev or chosen, before, after_fetch=True)
+        return None
+
+    def _maybe_store_fresher_daily(
+        self,
+        item: dict,
+        db_prev: Optional[PriceData],
+        chosen: PriceData,
+        fresh_prev: Optional[PriceData],
+        cached_rows: Optional[List[PriceData]],
+        before: date,
+    ) -> None:
+        if chosen is not fresh_prev or not cached_rows:
+            return
+        if db_prev is not None and self._prev_is_recent(db_prev, before):
+            return
+        self._store_daily_bars(cached_rows)
+        symbol, market = item["symbol"], item["market"]
+        if db_prev is None:
+            logging.info(
+                f"[{self.name}] {symbol}({market}) 库内没有昨收，"
+                f"改用本次行情 {chosen.timestamp.date()} 收盘价"
+            )
+            return
+        gap = (before - db_prev.timestamp.date()).days
+        logging.warning(
+            f"[{self.name}] {symbol}({market}) 日线停在 {db_prev.timestamp.date()}，"
+            f"距 {before} 已有 {gap} 天，改用 {chosen.timestamp.date()} 收盘价"
+        )
+
+    def _log_refetch(
+        self, symbol: str, market: str, chosen: Optional[PriceData], before: date,
+    ) -> None:
+        if chosen is None:
+            logging.warning(f"[{self.name}] {symbol}({market}) 没有可用昨收，尝试补拉")
+            return
+        gap = (before - chosen.timestamp.date()).days
+        logging.warning(
+            f"[{self.name}] {symbol}({market}) 日线停在 {chosen.timestamp.date()}，"
+            f"距 {before} 已有 {gap} 天，尝试补拉"
+        )
+
+    def _log_missing_prev(
+        self,
+        symbol: str,
+        market: str,
+        chosen: Optional[PriceData],
+        before: date,
+        after_fetch: bool = False,
+    ) -> None:
+        if chosen is None:
+            if after_fetch:
+                message = f"[{self.name}] {symbol}({market}) 补拉后仍没有可用昨收，涨跌幅不写入早报"
+            else:
+                message = f"[{self.name}] {symbol}({market}) 没有可用昨收，涨跌幅不写入早报"
+            logging.warning(message)
+            return
+        gap = (before - chosen.timestamp.date()).days
+        if after_fetch:
+            tail = "补拉后仍不能当作昨收，涨跌幅不写入早报"
+        else:
+            tail = "涨跌幅不写入早报"
+        logging.warning(
+            f"[{self.name}] {symbol}({market}) 日线停在 {chosen.timestamp.date()}，"
+            f"距 {before} 已有 {gap} 天，{tail}"
+        )
 
     async def _fetch_recent_daily(self, item: dict) -> Optional[List[PriceData]]:
         market, symbol = item["market"], item["symbol"]
@@ -248,6 +395,12 @@ class FetchMorningData(Step):
         if current is None or previous is None or not previous.close:
             return {**item, "missing": True}
         change_pct = (current.close - previous.close) / previous.close * 100
+        if item["symbol"] in _MAJOR_INDEX_SYMBOLS and abs(change_pct) > _INDEX_MOVE_LIMIT_PCT:
+            logging.warning(
+                f"[FetchMorningData] {item.get('name', item['symbol'])}({item['symbol']}) "
+                f"日涨跌 {change_pct:+.2f}% 超过 {_INDEX_MOVE_LIMIT_PCT:.0f}%，不写入早报"
+            )
+            return {**item, "missing": True, "unreliable": True}
         return {**item, "missing": False, "current_price": current.close, "change_pct": change_pct}
 
     @staticmethod
@@ -272,7 +425,9 @@ class FetchMorningData(Step):
                 continue
             lines.append(f"【{label}】")
             for r in group_rows:
-                if r["missing"]:
+                if r.get("unreliable"):
+                    lines.append(f"{r['name']}({r['symbol']}) 行情异常，已忽略")
+                elif r["missing"]:
                     lines.append(f"{r['name']}({r['symbol']}) 无最新数据")
                 else:
                     arrow = "📈" if r["change_pct"] >= 0 else "📉"
