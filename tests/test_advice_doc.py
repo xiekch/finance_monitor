@@ -1,8 +1,12 @@
 from datetime import date
+from pathlib import Path
 
 from models.advice import (
-    commit_message, normalize_symbol, parse_advice_markdown, render_advice_markdown, validate_advice,
+    DIRECTIONS, LEGACY_DIRECTIONS, commit_message, normalize_symbol, parse_advice_markdown,
+    render_advice_markdown, validate_advice,
 )
+
+_REPO = Path(__file__).resolve().parent.parent
 
 
 def test_summary_required_and_short(advice_md):
@@ -20,11 +24,11 @@ def test_old_doc_without_summary_roundtrips_without_empty_field(advice_md):
 
 def test_commit_message_uses_name_without_parenthetical(advice_md):
     etf = parse_advice_markdown(advice_md())
-    etf.name, etf.direction = "半导体（半导体ETF）", "观望"
+    etf.name, etf.direction = "半导体（半导体ETF）", "观望偏多"
     bond = parse_advice_markdown(advice_md())
     bond.name = "美国长债(iShares 20+ Year Treasury)"
     assert commit_message("advice: 2026-10-26 新增", [etf, bond]) == \
-        "advice: 2026-10-26 新增 半导体 观望、美国长债 看多"
+        "advice: 2026-10-26 新增 半导体 观望偏多、美国长债 看多"
 
 
 def test_roundtrip_keeps_frontmatter_and_sections(advice_md):
@@ -63,18 +67,45 @@ def test_reject_short_target_or_stop_on_wrong_side(advice_md):
     assert any("失效" in e for e in validate_advice(bad_stop))
 
 
-def test_watch_allows_target_on_either_side(advice_md):
-    doc = parse_advice_markdown(advice_md(direction="观望", target_price=130, stop_price=None))
-    assert validate_advice(doc) == []
+def test_watch_long_waits_for_pullback(advice_md):
+    ok = parse_advice_markdown(advice_md(direction="观望偏多", target_price=130, stop_price=150))
+    assert validate_advice(ok) == []
+    no_stop = parse_advice_markdown(advice_md(direction="观望偏多", target_price=130, stop_price=None))
+    assert validate_advice(no_stop) == []
+    bad_target = parse_advice_markdown(advice_md(direction="观望偏多", target_price=150, stop_price=160))
+    assert any("目标价" in e for e in validate_advice(bad_target))
+    bad_stop = parse_advice_markdown(advice_md(direction="观望偏多", target_price=130, stop_price=120))
+    assert any("失效" in e for e in validate_advice(bad_stop))
+    equal = parse_advice_markdown(advice_md(direction="观望偏多", target_price=140, stop_price=150))
+    assert any("目标价" in e for e in validate_advice(equal))
 
 
-def test_watch_stop_must_be_opposite_target(advice_md):
-    below = parse_advice_markdown(advice_md(direction="观望", target_price=130, stop_price=150))
-    above = parse_advice_markdown(advice_md(direction="观望", target_price=150, stop_price=130))
-    assert validate_advice(below) == []
-    assert validate_advice(above) == []
-    same_side = parse_advice_markdown(advice_md(direction="观望", target_price=130, stop_price=120))
-    assert any("失效" in e for e in validate_advice(same_side))
+def test_watch_short_waits_for_rebound(advice_md):
+    ok = parse_advice_markdown(advice_md(direction="观望偏空", target_price=150, stop_price=130))
+    assert validate_advice(ok) == []
+    no_stop = parse_advice_markdown(advice_md(direction="观望偏空", target_price=150, stop_price=None))
+    assert validate_advice(no_stop) == []
+    bad_target = parse_advice_markdown(advice_md(direction="观望偏空", target_price=130, stop_price=120))
+    assert any("目标价" in e for e in validate_advice(bad_target))
+    bad_stop = parse_advice_markdown(advice_md(direction="观望偏空", target_price=150, stop_price=160))
+    assert any("失效" in e for e in validate_advice(bad_stop))
+
+
+def test_new_advice_rejects_bare_watch_but_history_keeps_it(advice_md):
+    assert "观望" not in DIRECTIONS
+    assert LEGACY_DIRECTIONS == ("观望",)
+    bare = parse_advice_markdown(advice_md(direction="观望", target_price=130, stop_price=150))
+    assert any("观望偏多" in e for e in validate_advice(bare))
+    for rel in (
+        "advice/2026-10/2026-10-26-3.md",
+        "advice/2026-11/2026-11-03-1.md",
+    ):
+        text = (_REPO / rel).read_text(encoding="utf-8")
+        doc = parse_advice_markdown(text)
+        assert doc.direction == "观望"
+        rendered = render_advice_markdown(doc)
+        assert "direction: 观望\n" in rendered
+        assert "direction: 观望偏" not in rendered
 
 
 def test_reject_stale_or_future_reference(advice_md):

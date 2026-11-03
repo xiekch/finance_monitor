@@ -637,7 +637,7 @@ Expected: FAIL with `ModuleNotFoundError`
 - 附建议全文和已有复盘
 - 说明可以只读参考 `advice/` 里同一标的的其他建议
 - 写明价格评估窗口 `{created_at} 至 {min(today, expiry_date)}`；到期之后的走势只能在事件过程里提一句，不用来判断对错或写经验
-- 观望：写窗口内是否触及目标价，不按涨跌判断方向对错
+- 观望类（观望偏多 / 观望偏空；历史裸「观望」按目标价相对参考价归侧）：写清等的是哪一侧，写窗口内是否触及目标价，不按涨跌判断方向对错
 - `kind=due` 时禁止返回 `NO_NEW_FINDING`，必须写到期结案；`weekly` / `monthly` 说明什么算新发现，没有时只返回 `NO_NEW_FINDING`
 
 `parse_advice_response(raw, today, open_symbols)` 把每块转成 `AdviceDoc`（`created_at = today`，`status = open`），按出现顺序调用 `validate_advice(doc, open_symbols=已开 + 本批已收)`。合法的留下，非法的计入 `dropped`。合法数达到 `MAX_ADVICE` 后，其余都算 dropped。

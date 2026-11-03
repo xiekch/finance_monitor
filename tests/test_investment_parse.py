@@ -96,6 +96,10 @@ def test_advice_prompt_includes_history_only():
     assert "- summary:" in prompt
     assert "# 建议 1" in prompt
     assert "<<<" not in prompt
+    assert "观望偏多" in prompt and "观望偏空" in prompt
+    assert "不要写不带方向的「观望」" in prompt
+    assert "等价格回落到 target_price" in prompt
+    assert "等价格反弹或站上 target_price" in prompt
 
 
 def test_review_prompt_window_stops_at_expiry(advice_md):
@@ -104,3 +108,30 @@ def test_review_prompt_window_stops_at_expiry(advice_md):
     prompt = build_review_prompt(doc, kind="monthly", today=date(2026, 11, 1))
     assert "2026-10-19 至 2026-10-25" in prompt
     assert "NO_NEW_FINDING" in prompt
+    assert "观望偏多" in prompt and "观望偏空" in prompt
+    assert "等的是哪一侧" in prompt
+    assert "低于参考价视为偏多" in prompt and "高于参考价视为偏空" in prompt
+    assert "不是方向对错的唯一标准" in prompt
+
+
+def test_parse_requires_sided_watch():
+    bullish_wait = (
+        _block("PULL")
+        .replace("- direction: 看多", "- direction: 观望偏多")
+        .replace("- target_price: 160", "- target_price: 130")
+        .replace("- stop_price: 120", "- stop_price: 150")
+    )
+    bare = _block("WAIT").replace("- direction: 看多", "- direction: 观望").replace(
+        "- target_price: 160", "- target_price: 130"
+    ).replace("- stop_price: 120", "- stop_price: 150")
+    bearish_wait_bad = _block("POP").replace("- direction: 看多", "- direction: 观望偏空").replace(
+        "- target_price: 160", "- target_price: 130"
+    )
+    valid, dropped = parse_advice_response(
+        "\n".join([bullish_wait, bare, bearish_wait_bad]),
+        today=date(2026, 10, 26),
+        open_symbols=set(),
+    )
+    assert [d.symbol for d in valid] == ["PULL"]
+    assert valid[0].direction == "观望偏多"
+    assert dropped == 2
