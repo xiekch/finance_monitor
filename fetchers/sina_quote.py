@@ -1,6 +1,6 @@
 """新浪行情批量报价。A 股、指数和国内期货主力共用这一处，不需要 API key。"""
 import asyncio
-from datetime import datetime
+from datetime import date, datetime
 from typing import Dict, List, Optional
 
 import requests
@@ -14,14 +14,21 @@ _HEADERS = {
     "User-Agent": "Mozilla/5.0",
 }
 
-
+# int_dji / int_nasdaq / int_sp500 / int_nikkei 没有交易日，点位会长期停更
+# （2026-11 仍见 int_sp500=6643.70）。早报只接受带日期的报价。
+# ^NDX 是纳斯达克100，对应 gb_$ndx；int_nasdaq 和 gb_$ixic 是纳斯达克综合指数。
 _INDEX_CODES = {
-    "^DJI": "int_dji",
-    "^NDX": "int_nasdaq",
-    "^GSPC": "int_sp500",
-    "^N225": "int_nikkei",
+    "^DJI": "gb_$dji",
+    "^NDX": "gb_$ndx",
+    "^GSPC": "gb_$inx",
+    "^N225": "b_NKY",
     "^KS11": "b_KOSPI",
 }
+_US_INDEX_SYMBOLS = frozenset({"^DJI", "^NDX", "^GSPC"})
+_ASIA_INDEX_SYMBOLS = frozenset({"^N225", "^KS11"})
+INDEX_SYMBOLS = frozenset(_INDEX_CODES)
+# 周五报价放到下周二仍可用；再早视为冻结，不能当今天的现价。
+_MAX_QUOTE_AGE_DAYS = 4
 
 
 def overseas_sina_code(symbol: str, market: str) -> Optional[str]:
@@ -36,17 +43,38 @@ def overseas_sina_code(symbol: str, market: str) -> Optional[str]:
     return None
 
 
-def overseas_quote(symbol: str, market: str, fields: Optional[List[str]]) -> Optional[tuple]:
-    """返回 (现价 PriceData, 昨收)。字段布局按市场不同。"""
+def quote_session_date(
+    symbol: str, market: str, fields: Optional[List[str]],
+) -> Optional[date]:
+    """报价里的交易日。没有日期的指数接口不能用来判断新旧。"""
     if not fields:
         return None
+    if symbol in _US_INDEX_SYMBOLS or (market or "").upper() in ("US", "NASDAQ", "NYSE"):
+        return _field_date(fields, 3)
+    if symbol in _ASIA_INDEX_SYMBOLS:
+        return _field_date(fields, 6)
+    return None
+
+
+def overseas_quote(
+    symbol: str, market: str, fields: Optional[List[str]], today: Optional[date] = None,
+) -> Optional[tuple]:
+    """返回 (现价 PriceData, 昨收)。字段布局按市场不同。
+
+    美股和指数必须带近期交易日。int_* 那种只有名称、点位、涨跌的报价直接丢掉。
+    """
+    if not fields:
+        return None
+    today = today or date.today()
     market = (market or "").upper()
-    if symbol in _INDEX_CODES:
-        parsed = _index_ohlc(fields)
+    if symbol in _US_INDEX_SYMBOLS:
+        parsed = _dated_us_ohlc(fields, today)
+    elif symbol in _ASIA_INDEX_SYMBOLS:
+        parsed = _dated_asia_index_ohlc(fields, today)
     elif market == "HK":
         parsed = _hk_ohlc(fields)
     elif market in ("US", "NASDAQ", "NYSE"):
-        parsed = _us_ohlc(fields)
+        parsed = _dated_us_ohlc(fields, today)
     else:
         return None
     if parsed is None:
@@ -172,8 +200,21 @@ def _us_ohlc(fields: List[str]) -> Optional[tuple]:
     return close, prev, _num(fields[5]), _num(fields[6]), _num(fields[7])
 
 
+def _dated_us_ohlc(fields: List[str], today: date) -> Optional[tuple]:
+    if not _session_is_recent(_field_date(fields, 3), today):
+        return None
+    return _us_ohlc(fields)
+
+
+def _dated_asia_index_ohlc(fields: List[str], today: date) -> Optional[tuple]:
+    # b_NKY / b_KOSPI：1 现价，2 涨跌额，6 交易日。没有交易日的 int_* 四字段报价在这里被丢掉。
+    if not _session_is_recent(_field_date(fields, 6), today):
+        return None
+    return _index_ohlc(fields)
+
+
 def _index_ohlc(fields: List[str]) -> Optional[tuple]:
-    # 1 现价, 2 涨跌额。指数报价没有开高低。
+    # 1 现价, 2 涨跌额。开高低用现价占位，早报只取收盘和昨收。
     if len(fields) < 3:
         return None
     close = _num(fields[1])
@@ -182,6 +223,29 @@ def _index_ohlc(fields: List[str]) -> Optional[tuple]:
     if close <= 0 or prev <= 0:
         return None
     return close, prev, close, close, close
+
+
+def _field_date(fields: List[str], index: int) -> Optional[date]:
+    if len(fields) <= index:
+        return None
+    return _parse_date(fields[index])
+
+
+def _parse_date(value: str) -> Optional[date]:
+    text = (value or "").strip()
+    if len(text) < 10 or text[4] != "-" or text[7] != "-":
+        return None
+    try:
+        return datetime.strptime(text[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _session_is_recent(session: Optional[date], today: date) -> bool:
+    if session is None:
+        return False
+    delta = (today - session).days
+    return -1 <= delta <= _MAX_QUOTE_AGE_DAYS
 
 
 def _num(value: str) -> float:

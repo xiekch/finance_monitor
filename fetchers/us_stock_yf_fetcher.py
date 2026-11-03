@@ -95,7 +95,13 @@ class USStockYfFetcher(BaseFetcher):
         return prices
 
     async def _fetch_sina_fallback(self, symbols: List[dict]) -> List[PriceData]:
-        from fetchers.sina_quote import fetch_sina_quotes, overseas_quote, overseas_sina_code
+        from fetchers.sina_quote import (
+            INDEX_SYMBOLS,
+            fetch_sina_quotes,
+            overseas_quote,
+            overseas_sina_code,
+            quote_session_date,
+        )
 
         coded = []
         for info in symbols:
@@ -114,28 +120,55 @@ class USStockYfFetcher(BaseFetcher):
         prices = []
         for info, code in coded:
             market = info.get("market", "US")
-            parsed = overseas_quote(info["symbol"], market, quotes.get(code))
+            fields = quotes.get(code)
+            parsed = overseas_quote(info["symbol"], market, fields)
             if parsed is None:
-                logging.error(f"新浪备用报价无效 {info.get('name', info['symbol'])}")
+                label = info.get("name", info["symbol"])
+                if info["symbol"] in INDEX_SYMBOLS:
+                    logging.warning(f"新浪指数报价不可用，已忽略 {label}")
+                else:
+                    logging.error(f"新浪备用报价无效 {label}")
                 continue
             price, prev_close = parsed
             prices.append(price)
             ticker = self.to_yfinance_ticker(info["symbol"], market)
-            yesterday = datetime.now().replace(
-                hour=0, minute=0, second=0, microsecond=0,
-            ) - timedelta(days=1)
-            self._daily_cache[ticker] = [PriceData(
+            session = quote_session_date(info["symbol"], market, fields)
+            if session is None:
+                session = datetime.now().date() - timedelta(days=1)
+            # 两根日线只供这次早报计算昨收：后一根是现价，前一根是报价自带的昨收。
+            # 日期是推出来的，不能写进日线库，否则会压过真实交易日。
+            prev_bar = self._flat_daily(
+                info["symbol"], price.market, session - timedelta(days=1), prev_close,
+            )
+            session_bar = PriceData(
                 symbol=info["symbol"],
                 market=price.market,
-                timestamp=yesterday,
-                open=prev_close,
-                high=prev_close,
-                low=prev_close,
-                close=prev_close,
+                timestamp=datetime.combine(session, datetime.min.time()),
+                open=price.open,
+                high=price.high,
+                low=price.low,
+                close=price.close,
                 volume=0,
                 frequency="1d",
-            )]
+            )
+            prev_bar.quote_fallback = True
+            session_bar.quote_fallback = True
+            self._daily_cache[ticker] = [prev_bar, session_bar]
         return prices
+
+    @staticmethod
+    def _flat_daily(symbol: str, market: str, day, close: float) -> PriceData:
+        return PriceData(
+            symbol=symbol,
+            market=market,
+            timestamp=datetime.combine(day, datetime.min.time()),
+            open=close,
+            high=close,
+            low=close,
+            close=close,
+            volume=0,
+            frequency="1d",
+        )
 
     @staticmethod
     def _download_daily(tickers: List[str]):
@@ -200,14 +233,10 @@ class USStockYfFetcher(BaseFetcher):
             start_date = end_date - timedelta(days=30)
 
         yf_symbol = self.to_yfinance_ticker(symbol, market)
-        cached = self._daily_cache.get(yf_symbol)
-        if cached and frequency == "1d":
-            start_naive = _naive(start_date)
-            end_naive = _naive(end_date)
-            return [
-                bar for bar in cached
-                if start_naive <= _naive(bar.timestamp) <= end_naive
-            ]
+        if frequency == "1d":
+            cached = self.cached_daily_bars(symbol, market, start_date, end_date)
+            if cached is not None:
+                return cached
 
         try:
             yf_interval = self._convert_frequency(frequency)
@@ -265,6 +294,20 @@ class USStockYfFetcher(BaseFetcher):
             return self._get_historical_from_db(
                 symbol, frequency, start_date, end_date, market,
             )
+
+    def cached_daily_bars(
+        self, symbol: str, market: str, start_date: datetime, end_date: datetime,
+    ) -> Optional[List[PriceData]]:
+        """只读本次批量行情留下的日线，不再请求 yfinance。没有缓存时返回 None。"""
+        yf_symbol = self.to_yfinance_ticker(symbol, market)
+        if yf_symbol not in self._daily_cache:
+            return None
+        start_naive = _naive(start_date)
+        end_naive = _naive(end_date)
+        return [
+            bar for bar in self._daily_cache[yf_symbol]
+            if start_naive <= _naive(bar.timestamp) <= end_naive
+        ]
 
     def _convert_frequency(self, frequency: str) -> str:
         """将频率转换为 yfinance 支持的格式"""
