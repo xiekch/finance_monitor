@@ -8,7 +8,16 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 from config.investment import MAX_HORIZON_DAYS, MAX_REFERENCE_AGE_DAYS
 
-DIRECTIONS = ("看多", "看空", "观望")
+DIRECTIONS = ("看多", "看空", "观望偏多", "观望偏空")
+# 已落盘文件里的裸「观望」原样保留：解析和再次渲染不改写，新稿校验不接受。
+LEGACY_DIRECTIONS = ("观望",)
+# 目标价、失效价相对参考价必须处于的一侧。观望偏多等回撤，观望偏空等反弹或站上。
+_PRICE_SIDES = {
+    "看多": ("高于", "低于"),
+    "看空": ("低于", "高于"),
+    "观望偏多": ("低于", "高于"),
+    "观望偏空": ("高于", "低于"),
+}
 STATUSES = ("open", "closed")
 SECTIONS = ("理由", "目标价", "失效条件", "参考价", "观察条件")
 REVIEW_TITLE_PREFIX = "复盘"
@@ -147,7 +156,10 @@ def validate_advice(doc: AdviceDoc, open_symbols: Iterable[str] = frozenset()) -
     if len(doc.summary) > MAX_SUMMARY_CHARS:
         errors.append(f"summary 超过 {MAX_SUMMARY_CHARS} 字")
     if doc.direction and doc.direction not in DIRECTIONS:
-        errors.append(f"方向非法：{doc.direction}")
+        if doc.direction in LEGACY_DIRECTIONS:
+            errors.append("方向非法：观望，新建议必须写成观望偏多或观望偏空")
+        else:
+            errors.append(f"方向非法：{doc.direction}")
     if doc.status not in STATUSES:
         errors.append(f"状态非法：{doc.status}")
 
@@ -170,25 +182,24 @@ def validate_advice(doc: AdviceDoc, open_symbols: Iterable[str] = frozenset()) -
             errors.append(f"到期日超过创建日起 {MAX_HORIZON_DAYS} 天")
 
     ref, target, stop = doc.reference_price, doc.target_price, doc.stop_price
-    if ref is not None and target is not None:
-        if doc.direction == "看多":
-            if target <= ref:
-                errors.append("看多目标价必须高于参考价")
-            if stop is not None and stop >= ref:
-                errors.append("看多失效价必须低于参考价")
-        elif doc.direction == "看空":
-            if target >= ref:
-                errors.append("看空目标价必须低于参考价")
-            if stop is not None and stop <= ref:
-                errors.append("看空失效价必须高于参考价")
-        elif doc.direction == "观望" and stop is not None:
-            if (target - ref) * (stop - ref) >= 0:
-                errors.append("观望失效价必须与目标价分居参考价两侧")
+    sides = _PRICE_SIDES.get(doc.direction)
+    if sides and ref is not None and target is not None:
+        target_side, stop_side = sides
+        if _on_wrong_side(target, ref, target_side):
+            errors.append(f"{doc.direction}目标价必须{target_side}参考价")
+        if stop is not None and _on_wrong_side(stop, ref, stop_side):
+            errors.append(f"{doc.direction}失效价必须{stop_side}参考价")
 
     taken = {normalize_symbol(s) for s in open_symbols}
     if doc.symbol and normalize_symbol(doc.symbol) in taken:
         errors.append(f"标的 {doc.symbol} 已有未到期建议")
     return errors
+
+
+def _on_wrong_side(price: float, ref: float, side: str) -> bool:
+    if side == "高于":
+        return price <= ref
+    return price >= ref
 
 
 def normalize_symbol(symbol: str) -> str:

@@ -124,6 +124,14 @@ def test_advice_message_without_summary_still_has_sections(advice_md):
     assert text.startswith("**投资建议")
 
 
+def test_advice_message_shows_sided_watch(advice_md):
+    doc = parse_advice_markdown(advice_md(direction="观望偏空", target_price=150, stop_price=130))
+    doc.id = "2026-10-26-2"
+    text = format_advice_message(doc)
+    assert "观望偏空" in text
+    assert "观望偏多" not in text
+
+
 def test_advice_failure_pushes_error_and_writes_nothing(tmp_path: Path):
     class Boom:
         async def complete(self, prompt: str) -> str:

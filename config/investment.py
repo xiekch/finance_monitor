@@ -34,14 +34,19 @@ ADVICE_PROMPT_TEMPLATE = """今天是 {today}（北京时间）。你是一名�
 ## 输出要求
 - symbol 写法：A 股个股和 ETF 写 6 位数字代码（如 601857、512480），美股上市的 ETF 写 ticker（如 SOXX、GLD、TLT），其他海外市场的 ETF 写代码加交易所后缀（如港股 3033.HK），黄金写现货代码 XAUUSD（currency 写 USD，价格按美元/盎司）。
 - 行业板块、债券用 ETF 时，name 写「板块或品类（ETF 名）」，如「半导体（半导体ETF）」「美国长债（iShares 20+ Year Treasury）」；价格写 ETF 的成交价，债券不写收益率，看多债券 ETF 即看收益率下行。
-- direction 只能是看多、看空、观望。看多的 target_price 高于 reference_price，看空的低于 reference_price；观望的 target_price 是等待触发的价位。
-- stop_price 可选：失效条件里有明确价位时填写。看多的 stop_price 低于 reference_price，看空的高于 reference_price；观望的 stop_price 与 target_price 分在 reference_price 两侧。
+- direction 只能是看多、看空、观望偏多、观望偏空。不要写不带方向的「观望」。advice/ 里旧文件的裸「观望」是历史值，新建议不要照抄。
+  - 看多：target_price 高于 reference_price；若有 stop_price，必须低于 reference_price。
+  - 看空：target_price 低于 reference_price；若有 stop_price，必须高于 reference_price。
+  - 观望偏多：现在不追，等价格回落到 target_price 再评估做多或承接。target_price 低于 reference_price；若有 stop_price，必须高于 reference_price（价格先涨破失效位，这条等待作废）。
+  - 观望偏空：现在不追空，等价格反弹或站上 target_price 再评估做空或减仓。target_price 高于 reference_price；若有 stop_price，必须低于 reference_price（价格先跌破失效位，这条等待作废；跌破之后要不要做空另开建议）。
+- 参考价为 100 时：看多可以写 target 120、stop 90；看空可以写 target 80、stop 110；观望偏多可以写 target 90、stop 110；观望偏空可以写 target 110、stop 90。
+- stop_price 可选：失效条件里有明确价位时填写，并遵守上面的相对位置；没有明确价位就省略。
 - reference_price 必须是真实成交价，reference_date 在 {earliest_reference} 至 {today} 之间，reference_url 是能打开的来源链接。
 - expiry_date 是具体日期，不晚于 {latest_expiry}。
 - 价格字段只写数字，不带单位和千分位；币种写在 currency。
 - summary 用一句话写核心判断和触发条件，不超过 60 字，不写开头的价格复述，如「AI 资本开支未降温，财报前回调到 140 以下可分批看多」。
 - 正文五节写给人看：理由写清催化剂和依据，失效条件写清什么情况下这条建议作废。
-- 只输出 Markdown，不要用代码块包裹，不要写开场白和结尾。每条建议以一级标题「# 建议 N」开头，紧接字段列表，再用二级标题写五节正文。一级标题只用于分隔建议，正文里不要再出现一级标题。格式：
+- 只输出 Markdown，不要用代码块包裹，不要写开场白和结尾。每条建议以一级标题「# 建议 N」开头，紧接字段列表，再用二级标题写五节正文。一级标题只用于分隔建议，正文里不要再出现一级标题。下面用看多演示字段格式；观望类把 direction 写成观望偏多或观望偏空，价格按上面的相对位置填。格式：
 
 # 建议 1
 - symbol: 代码
@@ -80,7 +85,7 @@ REVIEW_PROMPT_TEMPLATE = """今天是 {today}（北京时间）。请对下面�
 ## 要求
 - 自己联网搜索价格和事件，不使用调用方提供的行情。
 - 价格评估窗口是 {window_start} 至 {window_end}。判断建议对错、是否碰到目标价或失效条件，只看这个窗口；窗口之后的走势最多在事件过程里提一句，不用来判断对错，也不据此写经验。
-- 观望类建议：写窗口内是否触及 target_price，触及时写日期和之后的走势；不按涨跌判断方向对错，经验写这次等待是否值得。
+- 观望类建议：先写清当初等的是哪一侧，再写这次等待是否值得。观望偏多是等价格回落到 target_price（低于参考价）再评估做多或承接；观望偏空是等价格反弹或站上 target_price（高于参考价）再评估做空或减仓。历史文件若 direction 仍是不带方向的「观望」，按 target_price 相对 reference_price 归侧：低于参考价视为偏多（等回撤），高于参考价视为偏空（等站上），复盘里点明这一侧，不要只写「观望」。价格行写窗口内是否触及 target_price，触及时写日期和之后的走势；有 stop_price 时也写是否触及。窗口内的涨跌本身不是方向对错的唯一标准。
 - 可以只读参考当前仓库 advice/ 里同一标的的其他建议和 advice/lessons.md；不要修改、新建或提交任何文件。
 - 下面的建议全文已包含之前的复盘，不要把已经写过的事实再当成新发现。
 {kind_rule}
