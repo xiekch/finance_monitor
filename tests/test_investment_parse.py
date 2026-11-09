@@ -87,6 +87,7 @@ def test_advice_prompt_includes_history_only():
     assert "别把叙事写成已兑现" in prompt
     assert "不使用已抓取的行情" in prompt
     assert "不要再发新建议" in prompt
+    assert "结案后的标的可以再分析" in prompt
     assert "advice/lessons.md" in prompt
     assert "只读" in prompt
     assert "3033.HK" in prompt
