@@ -95,4 +95,9 @@ TASK_SCHEDULE = {
         'type': 'cron',
         'kwargs': {'day': 1, 'hour': 21, 'minute': 10},
     },
+    # 持仓分析：排在到期结案（08:20）之后，能读到刚写下的经验；单次约 7 分钟
+    'holdings_advice': {
+        'type': 'cron',
+        'kwargs': {'hour': 8, 'minute': 40},
+    },
 }

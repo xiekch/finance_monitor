@@ -142,3 +142,54 @@ def test_futures_price_uses_latest_not_zero_prev_close():
     assert price.close == 906.080
     assert price.high == 908.720
     assert price.volume == 144845
+
+
+_FX = (
+    'var hq_str_fx_susdcny="03:00:01,6.6710000000,6.6726000000,6.6726000000,72.0000000000,'
+    '6.6700000000,6.6744000000,6.6672000000,6.6726000000,在岸人民币,0.0000,0.0000,0.0072,'
+    '此行情由新浪财经计算得出,0.0000,0.0000,,2026-11-14";\n'
+    'var hq_str_fx_shkdcny="06:59:46,0.8504847763,0.8504847763,0.8504847763,0.0000000000,'
+    '0.8504847763,0.8504847763,0.8504847763,0.8504847763,港元兑人民币,0.0000,0.0000,0.0000,'
+    '此行情由新浪财经计算得出,0.0000,0.0000,,2026-11-14";'
+)
+
+
+def test_fx_rate_uses_latest_price():
+    from fetchers.sina_quote import fx_rate_from_fields
+
+    quotes = parse_sina_body(_FX)
+    today = date(2026, 11, 15)
+    assert fx_rate_from_fields(quotes["fx_susdcny"], today) == 6.6726
+    assert fx_rate_from_fields(quotes["fx_shkdcny"], today) == 0.8504847763
+
+
+def test_fx_rate_rejects_stale_or_undated_quote():
+    from fetchers.sina_quote import fx_rate_from_fields
+
+    fields = parse_sina_body(_FX)["fx_susdcny"]
+    assert fx_rate_from_fields(fields, date(2026, 12, 15)) is None
+    assert fx_rate_from_fields(fields[:-1] + [""], date(2026, 11, 15)) is None
+    assert fx_rate_from_fields(None, date(2026, 11, 15)) is None
+    assert fx_rate_from_fields(["03:00:01", "0", "0"], date(2026, 11, 15)) is None
+
+
+def test_fetch_fx_rates(monkeypatch):
+    import asyncio
+
+    import fetchers.sina_quote as sina
+
+    asked = []
+
+    async def fake_fetch(codes):
+        asked.append(list(codes))
+        return {k: v for k, v in parse_sina_body(_FX).items() if k in codes}
+
+    monkeypatch.setattr(sina, "fetch_sina_quotes", fake_fetch)
+    today = date(2026, 11, 15)
+    rates = asyncio.run(sina.fetch_fx_rates(["CNY", "USD", "HKD", "EUR"], today))
+    assert rates == {"CNY": 1.0, "USD": 6.6726, "HKD": 0.8504847763}
+    assert asked == [["fx_susdcny", "fx_shkdcny"]]
+
+    asked.clear()
+    assert asyncio.run(sina.fetch_fx_rates(["CNY"], today)) == {"CNY": 1.0}
+    assert asked == []

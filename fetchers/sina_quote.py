@@ -1,7 +1,8 @@
 """新浪行情批量报价。A 股、指数和国内期货主力共用这一处，不需要 API key。"""
 import asyncio
+import time
 from datetime import date, datetime
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 import requests
 
@@ -29,6 +30,11 @@ _ASIA_INDEX_SYMBOLS = frozenset({"^N225", "^KS11"})
 INDEX_SYMBOLS = frozenset(_INDEX_CODES)
 # 周五报价放到下周二仍可用；再早视为冻结，不能当今天的现价。
 _MAX_QUOTE_AGE_DAYS = 4
+
+# 各币种兑人民币。持仓估值用，汇率几天内变化很小，长假后仍可用。
+_FX_CODES = {"USD": "fx_susdcny", "HKD": "fx_shkdcny"}
+_MAX_FX_AGE_DAYS = 10
+_FETCH_ATTEMPTS = 3
 
 
 def overseas_sina_code(symbol: str, market: str) -> Optional[str]:
@@ -255,16 +261,59 @@ def _num(value: str) -> float:
         return 0.0
 
 
+def fx_rate_from_fields(
+    fields: Optional[List[str]], today: Optional[date] = None,
+) -> Optional[float]:
+    """外汇报价里的最新价：8 最新价，1 买入价，末位是日期。没有近期日期的报价不用。"""
+    if not fields or len(fields) < 9:
+        return None
+    rate = _num(fields[8]) or _num(fields[1])
+    if rate <= 0:
+        return None
+    session = _parse_date(fields[-1])
+    if session is None:
+        return None
+    delta = ((today or date.today()) - session).days
+    if not -1 <= delta <= _MAX_FX_AGE_DAYS:
+        return None
+    return rate
+
+
+async def fetch_fx_rates(
+    currencies: Iterable[str], today: Optional[date] = None,
+) -> Dict[str, float]:
+    """各币种兑人民币的汇率。人民币恒为 1；取不到或不支持的币种不在结果里。"""
+    wanted = set(currencies)
+    rates: Dict[str, float] = {"CNY": 1.0} if "CNY" in wanted else {}
+    codes = {c: code for c, code in _FX_CODES.items() if c in wanted}
+    if not codes:
+        return rates
+    quotes = await fetch_sina_quotes(list(codes.values()))
+    for currency, code in codes.items():
+        rate = fx_rate_from_fields(quotes.get(code), today)
+        if rate is not None:
+            rates[currency] = rate
+    return rates
+
+
 async def fetch_sina_quotes(codes: List[str]) -> Dict[str, List[str]]:
     if not codes:
         return {}
     url = _SINA_URL.format(codes=",".join(codes))
 
     def _get() -> str:
-        resp = requests.get(url, headers=_HEADERS, timeout=15)
-        resp.raise_for_status()
-        resp.encoding = "gbk"
-        return resp.text
+        # 这个接口偶尔在 TLS 握手时被断开，重试通常就好。
+        for attempts_left in range(_FETCH_ATTEMPTS - 1, -1, -1):
+            try:
+                resp = requests.get(url, headers=_HEADERS, timeout=15)
+                resp.raise_for_status()
+            except requests.RequestException:
+                if not attempts_left:
+                    raise
+                time.sleep(1)
+                continue
+            resp.encoding = "gbk"
+            return resp.text
 
     text = await asyncio.to_thread(_get)
     return parse_sina_body(text)

@@ -22,8 +22,10 @@ from steps.notify import (
     MorningBriefingNotifyStep,
     MarketBriefingNotifyStep,
     InvestmentNotifyStep,
+    HoldingsNotifyStep,
 )
 from steps.investment_advice import AdviceStep
+from steps.holdings_advice import HoldingsAdviceStep
 from steps.investment_review import ReviewStep
 from steps.morning_ai import MorningAIStep
 from steps.market_briefing import MarketBriefingStep
@@ -86,6 +88,8 @@ TASK_REGISTRY: dict[str, Callable[[], Step]] = {
     "investment_advice": lambda: AdviceStep() | InvestmentNotifyStep(),
     "investment_review_weekly": lambda: ReviewStep(kind="weekly"),
     "investment_review_monthly": lambda: ReviewStep(kind="monthly"),
+    # 持仓分析读本机的 config/holdings.toml，不放进任何复合组，避免被顺带跑起来
+    "holdings_advice": lambda: HoldingsAdviceStep() | HoldingsNotifyStep(),
 }
 
 TASK_KEYS: list[str] = list(TASK_REGISTRY)

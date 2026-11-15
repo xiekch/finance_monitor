@@ -1,6 +1,7 @@
 import logging
 
 from clients.wechat_notifier import WeChatNotifier
+from config.holdings import HOLDINGS_WEBHOOK_URLS
 from config.investment import DISCLAIMER
 from models.advice import InvestmentMessage
 from steps.notify.base import BaseNotifyStep
@@ -20,3 +21,11 @@ class InvestmentNotifyStep(BaseNotifyStep):
             if not ok:
                 logging.error(f"[{self.name}] 推送失败")
         return []
+
+
+class HoldingsNotifyStep(InvestmentNotifyStep):
+    """持仓日报推送：配置了 HOLDINGS_WEBHOOK_URL 就发到专用群，否则用默认 webhook。"""
+
+    def __init__(self, notifier: WeChatNotifier | None = None):
+        super().__init__(notifier=notifier or WeChatNotifier(HOLDINGS_WEBHOOK_URLS or None))
+        self.name = "HoldingsNotifyStep"

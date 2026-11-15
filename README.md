@@ -12,6 +12,7 @@
 - **调度灵活**：基于 APScheduler，支持立即执行 / 仅执行一次 / 按 cron 调度
 - **企业微信告警**：波动超阈值自动推送 Webhook 消息
 - **AI 简报**：X / 微博推文 + 行情数据经 LLM 聚合生成 markdown 简报
+- **持仓分析**：每天读本机的持仓配置，程序取现价算盈亏和占比，模型联网查消息后给出加仓 / 持有 / 减仓 / 清仓建议
 
 ## 架构
 
@@ -45,6 +46,9 @@ Step 之间传递领域对象列表（list 进 list 出）；空列表也会交�
 ├── app.py                  # 应用入口 / CLI
 ├── tasks.py                # Task 注册表、复合组、build_tasks
 ├── config/                 # settings.py（API/DB）、schedule.py（调度）、monitor.py（标的）、social.py（X+LLM）
+│   ├── holdings.py             # 持仓分析的配置和提示词
+│   ├── holdings.example.toml   # 持仓配置示例
+│   └── holdings.toml           # 你的持仓（gitignore，自己创建）
 ├── models/                 # market、social 领域模型
 ├── steps/                  # 管道步骤
 │   ├── base.py             # Step / Chain / Fork / FetchMultiSource / Task / TaskRunner
@@ -55,20 +59,21 @@ Step 之间传递领域对象列表（list 进 list 出）；空列表也会交�
 │   ├── ai_briefing.py      # AI 简报生成步骤
 │   ├── morning_ai.py       # AI 早报生成步骤
 │   ├── market_briefing.py  # 行情早报格式化步骤
+│   ├── holdings_advice.py  # 持仓分析步骤（holdings_parse.py 负责提示词和回复解析）
 │   └── publish_mp.py       # 公众号发布步骤（终端）
-├── fetchers/               # 数据抓取实现（yfinance / binance / 股票接口 / trading_hours）
+├── fetchers/               # 数据抓取实现（yfinance / binance / 股票接口 / trading_hours / holding_quotes 持仓现价）
 ├── analyzers/              # 波动率分析、threshold_manager
 ├── clients/                # 外部服务客户端（LLM / X / 微博 / 企微 webhook / 公众号）
 ├── storage/                # market_db、social_store（SQLite 持久化）
 ├── utils/                  # time_util 等通用工具
 ├── scripts/                # show_posts 等辅助脚本
-├── data/                   # 运行时数据（SQLite，gitignore）
+├── data/                   # 运行时数据（SQLite、data/holdings/ 持仓报告，gitignore）
 └── logs/                   # 运行日志（gitignore）
 ```
 
 ## 环境要求
 
-- Python 3.9+
+- Python 3.11+（持仓配置用标准库 `tomllib` 读取）
 - 依赖：`apscheduler`、`yfinance`、`requests`、`pandas`、`python-dotenv` 等
 
 ## 配置
@@ -96,6 +101,9 @@ WECHAT_MP_APP_ID=...
 WECHAT_MP_APP_SECRET=...
 WECHAT_MP_THUMB_MEDIA_ID=...          # 草稿封面 media_id
 MORNING_WEBHOOK_URL=...               # 可选，行情早报 + 晨间 AI 简报专用 webhook
+
+# ── 持仓分析（config/holdings.py）──
+HOLDINGS_WEBHOOK_URL=...              # 可选，持仓日报专用 webhook（逗号分隔多个）；不填用默认 webhook
 ```
 
 配置文件按职责拆分：
@@ -104,6 +112,7 @@ MORNING_WEBHOOK_URL=...               # 可选，行情早报 + 晨间 AI 简报
 - `config/schedule.py` — `TASK_SCHEDULE`：按 task key 配置 APScheduler 触发器；形如 `{"type": "cron", "kwargs": {...}}`
 - `config/settings.py` — API 密钥、企微 webhook、数据库、代理等基础设施配置
 - `config/social.py` — X / 微博抓取 + LLM 简报相关配置
+- `config/holdings.toml` — 你的持仓、现金和仓位规则（不进 git，见下方「持仓分析」）
 
 ## 运行
 
@@ -216,6 +225,60 @@ python3 -m venv .venv
 `morning_briefing` task：先拉取 X 推文落库，再读社交帖 + 监控标的行情 → LLM 合成 → 企微推送 + 微信公众号发布。配置见 `config/social.py` 与 `config/morning_briefing.py`。运行命令见上方「运行示例」。
 
 所需环境变量：`TWITTERAPI_IO_KEY`、当前 LLM 后端对应的密钥（`tongyi` 用 `DASHSCOPE_API_KEY`，`cursor` 用 `CURSOR_API_KEY`）、`WECHAT_MP_APP_ID`、`WECHAT_MP_APP_SECRET`、`WECHAT_MP_THUMB_MEDIA_ID`；可选 `MORNING_WEBHOOK_URL`（见上方配置表）。
+
+## 持仓分析
+
+`holdings_advice` task：每天 08:40 读 `config/holdings.toml`，程序取现价并算好盈亏和占比，模型联网查每个持仓最近 7 天的消息，给出加仓 / 持有 / 减仓 / 清仓建议，推送到企微。它不在任何复合组里，要单独指定。
+
+```bash
+# 第一次用：复制示例，填上自己的持仓
+cp config/holdings.example.toml config/holdings.toml
+
+# 跑一次看结果（单次约 5～7 分钟）
+.venv/bin/python3 app.py -t holdings_advice --once
+
+# 常驻，每天 08:40 运行
+.venv/bin/python3 app.py -t holdings_advice --no-immediate
+```
+
+所需环境变量：`CURSOR_API_KEY`（`config/social.py` 的 `llm_provider` 要选 `cursor`，只有它能联网搜索）；可选 `HOLDINGS_WEBHOOK_URL`。
+
+### 改持仓
+
+直接改 `config/holdings.toml`。每次运行都会重新读这个文件，常驻进程不用重启。字段说明写在 `config/holdings.example.toml` 的注释里。配置写错时不会调用模型，企微会收到一条列出全部问题的消息。
+
+支持的市场：`SH` / `SZ`（A 股和场内 ETF）、`HK`（港股）、`US`（美股和美股 ETF）、`CRYPTO`（加密货币）、`FUT`（国内期货，也可以用来记实物金），以及 `CNY` / `USD` / `HKD` 现金。
+
+### 数据怎么流动
+
+1. 程序取现价和汇率：A 股、港股、美股、国内期货的现价和美元、港币汇率来自新浪行情，加密货币来自币安。
+2. 程序算出每个持仓的盈亏比例、市值占比和现金占比，检查仓位规则。
+3. 把成本价、现价、盈亏比例、占比、规则检查结果、持有理由和卖出条件发给模型。**持仓数量和金额不发**。
+4. 模型联网查消息，对每个持仓给出动作和依据。
+5. 程序校验每条建议：加仓、减仓、清仓必须有带链接的事实依据；减仓和清仓也可以对应一条被违反的规则。
+6. 完整报告存到 `data/holdings/YYYY-MM-DD.md`，再推送企微。
+
+### 哪些内容会离开本机
+
+本仓库是公开的，所以：
+
+- `config/holdings.toml` 和 `data/holdings/` 都在 `.gitignore` 里，不会被提交。持仓报告不写进 `advice/`。
+- 发给模型的只有价格（成本价、现价）和比例（盈亏、占比）。
+- 企微推送只有比例（占比、盈亏百分比）和现价；模型写的「执行」一节可能提到成本价。
+- 数量、市值、盈亏金额只出现在本机的 `data/holdings/` 报告里。
+
+### 推送内容
+
+- 一条总览：总盈亏比例、现金占比、币种分布，每个持仓一行（动作、占比、盈亏、一句话判断），以及超出规则、现价不可用、建议未通过校验的提醒。
+- 动作不是「持有」，或动作和上一次不同的持仓，各发一条详情（依据、执行、风险、什么情况下改变结论）。
+- 一条组合层面的判断。
+
+### 要知道的限制
+
+- 盈亏按配置里的成本价算，不含分红和已实现盈亏，和券商 App 里的浮动盈亏金额可能对不上。
+- 行情里的交易日比今天早 10 天以上的报价不用。没取到现价的持仓不计入总资产，这时其余持仓的占比会偏高，推送里会注明。所有持仓都没取到现价时不调用模型。
+- 加密货币按币安的 USDT 交易对取价，当作美元。
+- 不支持场外基金。
 
 ## 扩展
 

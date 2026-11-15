@@ -6,7 +6,7 @@ import re
 import threading
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from config.investment import ADVICE_ROOT
 from models.advice import (
@@ -128,6 +128,10 @@ class AdviceStore:
 
     def open_summaries(self, today: date) -> List[str]:
         return [_summary_line(d) for d in self.list_open(today)]
+
+    def open_summaries_for(self, today: date, wanted: Callable[[str], bool]) -> List[str]:
+        """只要 wanted(symbol) 为真的未到期建议，持仓分析用它挑出和持仓相关的。"""
+        return [_summary_line(d) for d in self.list_open(today) if wanted(d.symbol)]
 
     def recent_lessons(self, limit: int) -> List[str]:
         path = self.root / LESSONS_FILE

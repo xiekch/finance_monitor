@@ -1,0 +1,74 @@
+# 持仓配置示例。复制为 config/holdings.toml 后填写。
+# holdings.toml 已在 .gitignore 里，不会被提交。
+# 每次运行都重新读取这个文件，改完不用重启。
+# 改完想马上看结果：.venv/bin/python3 app.py -t holdings_advice --once
+
+# 现金和货币基金，按币种填金额。支持 CNY / USD / HKD。
+[cash]
+CNY = 50000
+USD = 2000
+
+# 仓位规则，都可以不填。程序用现价算出市值占比后检查，超出的会在推送里列出。
+[rules]
+max_position_pct = 20   # 单个持仓的市值占比上限（%）
+min_cash_pct = 10       # 现金占比下限（%）
+horizon = "一年以上"     # 投资期限，原样告诉模型
+
+# 每个持仓一段 [[holdings]]。
+#   symbol    代码，必须加引号（港股 "00700" 不加引号会被当成数字）
+#   market    SH / SZ / HK / US / CRYPTO / FUT，决定币种：
+#             SH、SZ、FUT 是人民币，HK 是港币，US 和 CRYPTO 是美元
+#   name      名称，模型靠它和代码一起确认标的
+#   quantity  数量（股、份、枚、克、手）
+#   cost      每单位的买入均价，币种和单位要和行情报价一致。盈亏按它算，不含分红
+#   multiplier  可选，期货合约乘数，默认 1
+#   thesis      可选，持有理由。模型每天对照它检查
+#   exit_when   可选，什么情况下卖出
+# 现价由程序取：SH / SZ / HK / US / FUT 来自新浪行情，CRYPTO 来自币安（BTCUSDT 这类交易对）。
+# 数量和金额不会发给模型，模型只看到成本价、现价、盈亏比例和仓位占比。
+
+[[holdings]]
+symbol = "600519"
+market = "SH"
+name = "贵州茅台"
+quantity = 100
+cost = 1500
+thesis = "高端白酒龙头，分红稳定"
+exit_when = "连续两个季度营收负增长"
+
+[[holdings]]
+symbol = "518880"
+market = "SH"
+name = "黄金ETF华安"
+quantity = 5000
+cost = 7.2
+
+[[holdings]]
+symbol = "00700"
+market = "HK"
+name = "腾讯控股"
+quantity = 200
+cost = 380
+
+[[holdings]]
+symbol = "NVDA"
+market = "US"
+name = "英伟达"
+quantity = 30
+cost = 120
+thesis = "AI 算力需求持续"
+
+[[holdings]]
+symbol = "BTCUSDT"
+market = "CRYPTO"
+name = "Bitcoin"
+quantity = 0.1
+cost = 60000
+
+# 实物金、积存金可以这样记：数量填克数，成本填每克价格。
+[[holdings]]
+symbol = "AU0"
+market = "FUT"
+name = "黄金（上期所沪金主力，元/克）"
+quantity = 50
+cost = 580

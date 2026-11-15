@@ -10,3 +10,6 @@ logs/
 *.db
 # Claude Code
 .claude/
+
+# 持仓配置含个人持仓，不进仓库；示例见 config/holdings.example.toml
+config/holdings.toml
