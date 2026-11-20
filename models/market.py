@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
@@ -68,6 +68,22 @@ class VolatilityAlert:
     previous_price: float
     timestamp: datetime
     volume: Optional[float] = None
+
+
+@dataclass
+class NewStockListing:
+    """一只当天上市的新股。拿不到的字段为 None。"""
+
+    symbol: str
+    name: str
+    exchange: str  # 上交所 / 深交所 / 北交所
+    board: str  # 主板 / 创业板 / 科创板 / 北交所 等
+    listing_date: date
+    issue_price: Optional[float] = None  # 发行价，元
+    issue_pe: Optional[float] = None  # 发行市盈率
+    industry_pe: Optional[float] = None  # 行业市盈率
+    issue_shares: Optional[float] = None  # 发行总数，万股
+    subscribe_date: Optional[date] = None  # 申购日
 
 
 @dataclass

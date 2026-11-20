@@ -104,6 +104,9 @@ MORNING_WEBHOOK_URL=...               # 可选，行情早报 + 晨间 AI 简报
 
 # ── 持仓分析（config/holdings.py）──
 HOLDINGS_WEBHOOK_URL=...              # 可选，持仓日报专用 webhook（逗号分隔多个）；不填用默认 webhook
+
+# ── 新股上市提醒（config/new_stock.py）──
+NEW_STOCK_WEBHOOK_URL=...             # 可选，新股上市专用 webhook（逗号分隔多个）；不填用默认 webhook
 ```
 
 配置文件按职责拆分：
@@ -279,6 +282,20 @@ cp config/holdings.example.toml config/holdings.toml
 - 行情里的交易日比今天早 10 天以上的报价不用。没取到现价的持仓不计入总资产，这时其余持仓的占比会偏高，推送里会注明。所有持仓都没取到现价时不调用模型。
 - 加密货币按币安的 USDT 交易对取价，当作美元。
 - 不支持场外基金。
+
+## 新股上市提醒
+
+`new_stock_listing` task：每天 09:00 从 akshare（东方财富新股表，覆盖沪深北）查「上市日期」是今天的新股，有就推送一条企微 markdown（名称、代码、板块、发行价、发行市盈率、发行量、申购日），没有就不发。不需要额外密钥。推送用 `NEW_STOCK_WEBHOOK_URL`（可选，逗号分隔多个），没配就用默认 `WECOM_WEBHOOK_URL`。它不在任何复合组里，要单独指定。
+
+```bash
+# 立即查一次今天有没有新股上市
+.venv/bin/python3 app.py -t new_stock_listing --once
+
+# 常驻，每天 09:00 运行
+.venv/bin/python3 app.py -t new_stock_listing --no-immediate
+```
+
+接口连续失败 3 次后任务报错并写入 `logs/app.log`，不会推送。
 
 ## 扩展
 

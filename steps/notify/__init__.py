@@ -7,8 +7,10 @@ from steps.notify.briefing import (
 )
 from steps.notify.market_briefing import MarketBriefingNotifyStep
 from steps.notify.investment import HoldingsNotifyStep, InvestmentNotifyStep
+from steps.notify.new_stock import NewStockNotifyStep
 
 __all__ = [
+    "NewStockNotifyStep",
     "InvestmentNotifyStep",
     "HoldingsNotifyStep",
     "BaseNotifyStep",

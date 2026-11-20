@@ -95,6 +95,11 @@ TASK_SCHEDULE = {
         'type': 'cron',
         'kwargs': {'day': 1, 'hour': 21, 'minute': 10},
     },
+    # 新股上市提醒：每天 09:00 扫描，当天有新股上市才推送
+    'new_stock_listing': {
+        'type': 'cron',
+        'kwargs': {'hour': 9, 'minute': 0},
+    },
     # 持仓分析：排在到期结案（08:20）之后，能读到刚写下的经验；单次约 7 分钟
     'holdings_advice': {
         'type': 'cron',

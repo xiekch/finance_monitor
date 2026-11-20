@@ -14,8 +14,10 @@ from steps.fetch import (
     FetchXPosts,
     FetchWeiboPosts,
     FetchMorningData,
+    FetchNewStockListings,
 )
 from steps.notify import (
+    NewStockNotifyStep,
     VolatilityNotifyStep,
     BriefingNotifyStep,
     XBriefingNotifyStep,
@@ -90,6 +92,8 @@ TASK_REGISTRY: dict[str, Callable[[], Step]] = {
     "investment_review_monthly": lambda: ReviewStep(kind="monthly"),
     # 持仓分析读本机的 config/holdings.toml，不放进任何复合组，避免被顺带跑起来
     "holdings_advice": lambda: HoldingsAdviceStep() | HoldingsNotifyStep(),
+    # 每天扫一遍新股上市日历，今天有新股上市才推送，没有就不发
+    "new_stock_listing": lambda: FetchNewStockListings() | NewStockNotifyStep(),
 }
 
 TASK_KEYS: list[str] = list(TASK_REGISTRY)
