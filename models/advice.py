@@ -24,6 +24,7 @@ REVIEW_TITLE_PREFIX = "复盘"
 REVIEW_KINDS = {"due": "到期结案", "weekly": "周回溯", "monthly": "月回溯"}
 REVIEW_LINES = ("- 结论：", "- 价格：", "- 逻辑：", "- 事件过程：", "- 经验：")
 NO_NEW_FINDING = "NO_NEW_FINDING"
+NO_ADVICE = "NO_ADVICE"
 
 _A_SHARE_SUFFIX = re.compile(r"(?<=^\d{6})\.(SS|SH|SZ|BJ)$")
 _A_SHARE_PREFIX = re.compile(r"^(SH|SZ|BJ)(?=\d{6}$)")
@@ -241,6 +242,16 @@ def normalize_lesson(text: str) -> str:
 def is_blank_lesson(text: str) -> bool:
     """「无」「无。」「没有」之类都当作没有经验，不落盘、不推送。"""
     return normalize_lesson(text) in _BLANK_LESSONS
+
+
+def replace_review_line(note: str, marker: str, text: str) -> str:
+    """把复盘节里第一条以 marker 开头的行整行换成 marker + text；找不到就原样返回。"""
+    lines = (note or "").splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith(marker):
+            lines[i] = f"{marker}{text}"
+            return "\n".join(lines) + ("\n" if note.endswith("\n") else "")
+    return note
 
 
 def review_line(review: str, marker: str) -> str:

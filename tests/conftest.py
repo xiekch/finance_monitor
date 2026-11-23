@@ -8,6 +8,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
+@pytest.fixture(autouse=True)
+def no_real_price_history(monkeypatch):
+    """测试一律不联网取日 K；需要行情的用例自己传 bars_fn 或再次 monkeypatch。"""
+    from fetchers import price_history
+
+    monkeypatch.setattr(price_history, "fetch_daily_bars", lambda *a, **k: None)
+
+
 @pytest.fixture
 def advice_md():
     def make(day=26, *, symbol="NVDA", direction="看多", status="open", expiry=None,

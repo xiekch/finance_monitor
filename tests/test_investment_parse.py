@@ -5,6 +5,7 @@ from steps.investment_parse import (
     build_advice_prompt,
     build_review_prompt,
     parse_advice_response,
+    parse_no_advice,
     parse_review_response,
 )
 
@@ -114,6 +115,30 @@ def test_review_prompt_window_stops_at_expiry(advice_md):
     assert "等的是哪一侧" in prompt
     assert "低于参考价视为偏多" in prompt and "高于参考价视为偏空" in prompt
     assert "不是方向对错的唯一标准" in prompt
+
+
+def test_parse_no_advice_accepts_deliberate_empty_answer():
+    assert parse_no_advice("NO_ADVICE") == ""
+    assert parse_no_advice("  NO_ADVICE \n") == ""
+    assert parse_no_advice("**NO_ADVICE**\n今天没有新的催化剂，已有建议已覆盖。") == "今天没有新的催化剂，已有建议已覆盖。"
+    assert parse_no_advice("```\nNO_ADVICE\n```") == ""
+
+
+def test_parse_no_advice_rejects_everything_else():
+    assert parse_no_advice("") is None
+    assert parse_no_advice(None) is None
+    assert parse_no_advice("今天没有建议") is None
+    assert parse_no_advice("先说明一下\nNO_ADVICE") is None
+    # 和正常建议块并存说明输出自相矛盾，按建议解析，不当作主动放弃
+    assert parse_no_advice("NO_ADVICE\n" + _block("NVDA")) is None
+    assert parse_no_advice(_block("NVDA")) is None
+
+
+def test_advice_prompt_allows_zero_and_defines_sentinel():
+    prompt = build_advice_prompt(today=date(2026, 10, 26), open_summaries=[], lessons=[])
+    assert "0～3 条" in prompt and "宁缺毋滥" in prompt
+    assert "只输出 NO_ADVICE" in prompt
+    assert "1～3 条" not in prompt
 
 
 def test_review_prompt_defaults_lesson_to_none_and_asks_for_conclusion(advice_md):

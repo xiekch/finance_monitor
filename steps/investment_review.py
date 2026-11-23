@@ -1,15 +1,26 @@
 """投资复盘：到期结案、周回溯、月回溯。每份文件单独调用模型，只追加不改写。"""
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from datetime import date
 from pathlib import Path
-from typing import Callable, List
+from typing import Callable, List, Optional
 
+from analyzers.advice_facts import WindowFacts, price_line, window_facts
 from clients.llm_client.factory import build_investment_llm_client
 from config.investment import ADVICE_ROOT, MAX_REVIEWS_PER_RUN
-from models.advice import REVIEW_KINDS, AdviceDoc, InvestmentMessage, commit_message, is_blank_lesson, review_line
+from fetchers import price_history
+from models.advice import (
+    REVIEW_KINDS,
+    AdviceDoc,
+    InvestmentMessage,
+    commit_message,
+    is_blank_lesson,
+    replace_review_line,
+    review_line,
+)
 from steps.base import Step
 from steps.investment_parse import build_review_prompt
 from storage.advice_git import AdviceCommitter
@@ -19,7 +30,7 @@ from storage.advice_store import AdviceStore, previous_month, previous_week
 class ReviewStep(Step):
     def __init__(self, kind: str, store_root: Path = ADVICE_ROOT, llm=None, committer=None,
                  max_per_run: int = MAX_REVIEWS_PER_RUN,
-                 today_fn: Callable[[], date] = date.today):
+                 today_fn: Callable[[], date] = date.today, bars_fn=None):
         if kind not in REVIEW_KINDS:
             raise ValueError(f"未知复盘种类：{kind}")
         self.kind = kind
@@ -30,6 +41,20 @@ class ReviewStep(Step):
         self.committer = committer or AdviceCommitter()
         self.max_per_run = max_per_run
         self.today_fn = today_fn
+        # 运行时再取模块属性，测试里替换 fetch_daily_bars 才会生效
+        self.bars_fn = bars_fn or price_history.fetch_daily_bars
+
+    async def _price_facts(self, doc: AdviceDoc, today: date) -> Optional[WindowFacts]:
+        """程序取日 K 算价格事实。不支持的品种、接口失败、窗口内没有交易日都返回 None。"""
+        end = min(today, doc.expiry_date)
+        try:
+            bars = await asyncio.to_thread(self.bars_fn, doc.symbol, doc.created_at, end)
+        except Exception as e:
+            logging.warning(f"[{self.name}] {doc.id} 取日 K 失败，回落到模型自己查价：{e}")
+            return None
+        if not bars:
+            return None
+        return window_facts(doc, bars, today)
 
     async def process(self, items: list) -> list:
         today = self.today_fn()
@@ -44,7 +69,11 @@ class ReviewStep(Step):
         for doc in todo:
             try:
                 current = self.store.load(doc.id)
-                raw = await self.llm.complete(build_review_prompt(current, self.kind, today))
+                facts = await self._price_facts(current, today)
+                raw = await self.llm.complete(build_review_prompt(current, self.kind, today, facts))
+                if facts is not None:
+                    # 价格行整行由程序写，模型写的数字不落盘
+                    raw = replace_review_line(raw, "- 价格：", price_line(current, facts))
                 updated = self.store.append_review(doc.id, raw, self.kind, on=today)
             except Exception as e:
                 failed += 1

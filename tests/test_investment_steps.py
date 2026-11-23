@@ -3,6 +3,7 @@ from datetime import date
 from pathlib import Path
 
 from config.investment import DISCLAIMER
+from fetchers.price_history import DailyBar
 from models.advice import parse_advice_markdown
 from steps.investment_advice import AdviceStep, format_advice_message
 from steps.investment_review import ReviewStep
@@ -134,6 +135,27 @@ def test_advice_message_shows_sided_watch(advice_md):
     assert "观望偏多" not in text
 
 
+def test_no_advice_is_silent_and_writes_nothing(tmp_path: Path):
+    notifier = FakeNotifier()
+    committer = FakeCommitter()
+    step = AdviceStep(store_root=tmp_path, llm=FakeLLM(["NO_ADVICE\n没有新的催化剂。"]),
+                      committer=committer, today_fn=lambda: date(2026, 10, 26))
+    _run(step, notifier)
+    assert list(tmp_path.rglob("*.md")) == []
+    assert committer.messages == []
+    assert notifier.sent == []
+
+
+def test_garbage_answer_is_still_reported_as_failure(tmp_path: Path):
+    notifier = FakeNotifier()
+    committer = FakeCommitter()
+    step = AdviceStep(store_root=tmp_path, llm=FakeLLM(["今天没有建议"]), committer=committer,
+                      today_fn=lambda: date(2026, 10, 26))
+    _run(step, notifier)
+    assert committer.messages == []
+    assert notifier.sent and "生成失败" in notifier.sent[0]
+
+
 def test_advice_failure_pushes_error_and_writes_nothing(tmp_path: Path):
     class Boom:
         async def complete(self, prompt: str) -> str:
@@ -186,6 +208,71 @@ def test_due_uses_today_at_run_time_and_closes(tmp_path: Path, advice_md):
     assert "status: closed" in text
     assert committer.messages == ["advice: 2026-10-28 到期结案 测试标的 看多"]
     assert len(notifier.sent) == 1
+
+
+def _bars_fn(bars, calls=None):
+    def fn(symbol, start, end):
+        if calls is not None:
+            calls.append((symbol, start, end))
+        return bars
+    return fn
+
+
+NVDA_BARS = [
+    DailyBar(date(2026, 10, 26), 141, 145, 138, 142),
+    DailyBar(date(2026, 10, 27), 150, 161, 141, 160),   # 最高 161，盘中碰到目标价 160
+]
+
+
+def test_review_prompt_carries_program_facts_and_price_line_is_overwritten(tmp_path: Path, advice_md):
+    saved = AdviceStore(tmp_path).save_new(parse_advice_markdown(advice_md(25, expiry=date(2026, 10, 27))))
+    llm, calls = FakeLLM([DUE]), []   # DUE 里模型自己写的价格行是「未碰到目标价」，和事实矛盾
+    step = ReviewStep(kind="due", store_root=tmp_path, llm=llm, committer=FakeCommitter(),
+                      today_fn=lambda: date(2026, 10, 28), bars_fn=_bars_fn(NVDA_BARS, calls))
+    _run(step, FakeNotifier())
+
+    assert calls == [("NVDA", date(2026, 10, 25), date(2026, 10, 27))]
+    prompt = llm.prompts[0]
+    assert "程序从日 K 算出的事实" in prompt
+    assert "目标价 160（高于参考价 140）：10/27盘中碰到" in prompt
+    assert "程序没有取到" not in prompt
+
+    text = (tmp_path / "2026-10" / f"{saved.id}.md").read_text(encoding="utf-8")
+    price = next(line for line in text.splitlines() if line.startswith("- 价格："))
+    assert "目标价10/27盘中碰到" in price and "最高 161（10/27）" in price
+    assert "未碰到目标价" not in text and "https://example.com/close" not in price
+    assert "- 逻辑：需求仍在。" in text            # 其余行保持模型写的
+
+
+def test_review_without_program_prices_falls_back_to_model(tmp_path: Path, advice_md):
+    saved = AdviceStore(tmp_path).save_new(parse_advice_markdown(advice_md(25, expiry=date(2026, 10, 27))))
+    llm = FakeLLM([DUE])
+    step = ReviewStep(kind="due", store_root=tmp_path, llm=llm, committer=FakeCommitter(),
+                      today_fn=lambda: date(2026, 10, 28),
+                      bars_fn=lambda *a: (_ for _ in ()).throw(RuntimeError("boom")))   # 接口异常
+    asyncio.run(step.process([]))
+    assert "程序没有取到这只标的的行情" in llm.prompts[0]
+    text = (tmp_path / "2026-10" / f"{saved.id}.md").read_text(encoding="utf-8")
+    assert "未碰到目标价。来源 https://example.com/close" in text   # 模型的价格行原样保留
+
+
+def test_new_advice_with_wrong_reference_price_is_dropped(tmp_path: Path):
+    committer, notifier, calls = FakeCommitter(), FakeNotifier(), []
+    wrong = [DailyBar(date(2026, 10, 26), 99, 102, 98, 100)]     # 模型写的参考价 140，实际收 100
+    step = AdviceStep(store_root=tmp_path, llm=FakeLLM([ADVICE]), committer=committer,
+                      today_fn=lambda: date(2026, 10, 26), bars_fn=_bars_fn(wrong, calls))
+    _run(step, notifier)
+    assert calls == [("NVDA", date(2026, 10, 19), date(2026, 10, 26))]
+    assert list(tmp_path.rglob("*.md")) == [] and committer.messages == []
+    assert notifier.sent and "没有合法建议，丢弃 1 条" in notifier.sent[0]
+
+
+def test_new_advice_is_kept_when_price_fetch_raises(tmp_path: Path):
+    step = AdviceStep(store_root=tmp_path, llm=FakeLLM([ADVICE]), committer=FakeCommitter(),
+                      today_fn=lambda: date(2026, 10, 26),
+                      bars_fn=lambda *a: (_ for _ in ()).throw(RuntimeError("boom")))
+    _run(step, FakeNotifier())
+    assert (tmp_path / "2026-10" / "2026-10-26-1.md").is_file()
 
 
 def test_review_cap_skips_extra_files(tmp_path: Path, advice_md):
