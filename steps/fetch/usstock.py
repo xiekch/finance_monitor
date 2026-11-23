@@ -6,6 +6,7 @@ from steps.base import Step
 from models.market import PriceData
 from fetchers.us_stock_yf_fetcher import USStockYfFetcher
 from config.settings import API_CONFIG
+from config.minute_targets import minute_stock_targets
 from config.monitor import MONITOR_CONFIG
 
 
@@ -61,7 +62,11 @@ class FetchUSStock(Step):
     def _get_symbols(self) -> List[dict]:
         yf_markets = ('US', 'NASDAQ', 'NYSE', 'HK', 'JP', 'KR')
         result = []
-        for s in MONITOR_CONFIG.get('stocks', []):
+        if self.frequency == 'minute':
+            configured = minute_stock_targets()  # 持仓中的股票
+        else:
+            configured = MONITOR_CONFIG.get('stocks', [])
+        for s in configured:
             if s['frequency'] != self.frequency:
                 continue
             market = s.get('market', '')

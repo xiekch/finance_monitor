@@ -1,18 +1,11 @@
 """监控标的配置。
 
 按 asset_type 分组，frequency 在每条 item 内；同标的不同频次各一条。
+股票的分钟级标的不在这里：取自 config/holdings.toml 的股票持仓，见 config/minute_targets.py。
 """
 
 MONITOR_CONFIG = {
     'stocks': [
-        # minute
-        {'name': '腾讯控股', 'symbol': '00700', 'market': 'HK', 'frequency': 'minute', 'threshold': 1.5},
-        {'name': '贵州茅台', 'symbol': '600519', 'market': 'SH', 'frequency': 'minute', 'threshold': 1.5},
-        {'name': '宁德时代', 'symbol': '300750', 'market': 'SZ', 'frequency': 'minute', 'threshold': 2.0},
-        {'name': '苹果', 'symbol': 'AAPL', 'market': 'US', 'frequency': 'minute', 'threshold': 2.0},
-        {'name': '特斯拉', 'symbol': 'TSLA', 'market': 'US', 'frequency': 'minute', 'threshold': 2.0},
-        {'name': '英伟达', 'symbol': 'NVDA', 'market': 'US', 'frequency': 'minute', 'threshold': 2.5},
-        {'name': '微软', 'symbol': 'MSFT', 'market': 'US', 'frequency': 'minute', 'threshold': 2.0},
         # daily（A 股日/周线仅指数，见 AStockFetcher）
         {'name': '上证指数', 'symbol': '000001', 'market': 'SH', 'frequency': 'daily', 'threshold': 2.5},
         {'name': '沪深300', 'symbol': '000300', 'market': 'SH', 'frequency': 'daily', 'threshold': 3.0},

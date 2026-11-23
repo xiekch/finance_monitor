@@ -4,6 +4,7 @@ from datetime import date as _date
 from steps.notify.base import BaseNotifyStep
 from models.market import VolatilityAlert
 from clients.wechat_notifier import WeChatNotifier
+from config.settings import ALERT_WEBHOOK_URLS
 
 
 class VolatilityNotifyStep(BaseNotifyStep):
@@ -12,7 +13,11 @@ class VolatilityNotifyStep(BaseNotifyStep):
     _DEDUP_FREQUENCIES = frozenset({"daily", "weekly"})
 
     def __init__(self, notifier: WeChatNotifier | None = None):
-        super().__init__(notifier=notifier, name="VolatilityNotifyStep")
+        # 配置了 ALERT_WEBHOOK_URL 就发到告警专用群，否则用默认 webhook
+        super().__init__(
+            notifier=notifier or WeChatNotifier(ALERT_WEBHOOK_URLS or None),
+            name="VolatilityNotifyStep",
+        )
         self._alerted_keys: set[tuple[str, str, _date]] = set()
 
     async def process(self, items: list) -> list:

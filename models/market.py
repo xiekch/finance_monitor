@@ -21,6 +21,8 @@ class PriceData:
     close: float
     volume: float = 0
     frequency: str = '1m'
+    # 昨收。只有报价自带昨收的来源（新浪 A 股、港美股）会填，不入库、不序列化。
+    prev_close: Optional[float] = None
 
     def __post_init__(self):
         # payload 跨进程/线程传输后 timestamp 常以 ISO 字符串形态出现，
@@ -68,6 +70,7 @@ class VolatilityAlert:
     previous_price: float
     timestamp: datetime
     volume: Optional[float] = None
+    basis: str = ''  # 参考价是什么：昨收 / 30分钟前；空表示上一次轮询价（加密货币、期货的分钟级）
 
 
 @dataclass

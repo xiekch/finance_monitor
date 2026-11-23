@@ -8,7 +8,8 @@ from typing import Any, Dict, List, Optional
 from config.holdings import CASH_CURRENCIES, MARKET_CURRENCY
 
 _HOLDING_KEYS = frozenset(
-    {"symbol", "market", "name", "quantity", "cost", "multiplier", "thesis", "exit_when"}
+    {"symbol", "market", "name", "quantity", "cost", "multiplier", "thesis", "exit_when",
+     "alert_day_pct", "alert_window_pct"}
 )
 _RULE_KEYS = frozenset({"max_position_pct", "min_cash_pct", "horizon"})
 _TOP_KEYS = frozenset({"cash", "rules", "holdings"})
@@ -31,6 +32,9 @@ class Holding:
     multiplier: float = 1.0
     thesis: str = ""
     exit_when: str = ""
+    # 盯盘阈值（%），不填用 config/minute_targets.py 的默认值
+    alert_day_pct: Optional[float] = None     # 相对昨收
+    alert_window_pct: Optional[float] = None  # 相对 30 分钟前
 
     @property
     def currency(self) -> str:
@@ -110,6 +114,10 @@ def _parse_holdings(raw: Any, errors: List[str]) -> List[Holding]:
             multiplier=float(item.get("multiplier", 1)),
             thesis=item.get("thesis", "").strip(),
             exit_when=item.get("exit_when", "").strip(),
+            alert_day_pct=float(item["alert_day_pct"]) if "alert_day_pct" in item else None,
+            alert_window_pct=(
+                float(item["alert_window_pct"]) if "alert_window_pct" in item else None
+            ),
         ))
     return holdings
 
@@ -146,6 +154,9 @@ def _holding_problems(item: Dict[str, Any]) -> List[str]:
             problems.append(f"{key} 必须是正数")
     if "multiplier" in item and not _is_positive(item["multiplier"]):
         problems.append("multiplier 必须是正数")
+    for key in ("alert_day_pct", "alert_window_pct"):
+        if key in item and not _is_positive(item[key]):
+            problems.append(f"{key} 必须是正数")
     for key in ("thesis", "exit_when"):
         if key in item and not isinstance(item[key], str):
             problems.append(f"{key} 要写成字符串")

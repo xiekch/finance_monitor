@@ -96,6 +96,7 @@ def overseas_quote(
         close=close,
         volume=0,
         frequency="1m",
+        prev_close=prev,
     )
     return price, prev
 
@@ -159,6 +160,7 @@ def _ashare_price(symbol: str, market: str, fields: List[str]) -> Optional[Price
         close=close,
         volume=_num(fields[8]),
         frequency="1m",
+        prev_close=_num(fields[2]) or None,
     )
 
 

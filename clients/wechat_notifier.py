@@ -31,7 +31,7 @@ class WeChatNotifier:
             f"标的: {alert.name}({alert.symbol})\n"
             f"涨跌幅: {alert.current_change:+.2f}% (阈值: {alert.threshold}%)\n"
             f"当前价: {alert.current_price:.4f}\n"
-            f"参考价: {alert.previous_price:.4f}\n"
+            f"参考价{f'（{alert.basis}）' if alert.basis else ''}: {alert.previous_price:.4f}\n"
             f"时间: {alert.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
         )
 

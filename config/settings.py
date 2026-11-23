@@ -49,6 +49,11 @@ WECOM_CONFIG = {
     ],
 }
 
+# 波动告警（分钟 / 日 / 周）专用 webhook，逗号分隔；未配置时用上面的默认 webhook
+ALERT_WEBHOOK_URLS: list[str] = [
+    u.strip() for u in os.getenv('ALERT_WEBHOOK_URL', '').split(',') if u.strip()
+]
+
 # 数据库配置
 DATABASE_CONFIG = {
     'path': str(DATA_DIR / 'market_data.db'),

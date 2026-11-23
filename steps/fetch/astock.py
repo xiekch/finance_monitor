@@ -5,6 +5,7 @@ from steps.base import Step
 from models.market import PriceData
 from fetchers.astock_fetcher import AStockFetcher
 from config.settings import API_CONFIG
+from config.minute_targets import minute_stock_targets
 from config.monitor import MONITOR_CONFIG
 
 
@@ -21,8 +22,12 @@ class FetchAStock(Step):
         self.stock_fetcher = AStockFetcher(API_CONFIG)
 
     async def process(self, items: list = ()) -> List[PriceData]:
+        if self.frequency == 'minute':
+            configured = minute_stock_targets()  # 持仓中的股票
+        else:
+            configured = MONITOR_CONFIG.get('stocks', [])
         symbols = [
-            s for s in MONITOR_CONFIG.get('stocks', [])
+            s for s in configured
             if s['frequency'] == self.frequency and s.get('market') in _A_STOCK_MARKETS
         ]
         if not symbols:

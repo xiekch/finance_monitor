@@ -86,8 +86,11 @@ ITICK_TOKEN=your_itick_token          # A 股等（config/settings.py）
 FINAGE_API_KEY=your_finage_key        # 美股等
 
 # ── 企业微信（默认 webhook；多个 URL 用逗号分隔）──
-# 用于：波动告警、微博简报；X/早报专用 webhook 未配置时的 fallback
+# 用于：微博简报；波动告警、X/早报专用 webhook 未配置时的 fallback
 WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=aaa
+
+# ── 波动告警专用 webhook（可选，逗号分隔多个）；不填用上面的默认 webhook ──
+ALERT_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=bbb
 
 # ── X / 微博 AI 简报（config/social.py）──
 TWITTERAPI_IO_KEY=...                 # X 数据源 twitterapi.io（x_briefing 必填）

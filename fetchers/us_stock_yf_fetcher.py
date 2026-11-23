@@ -73,6 +73,9 @@ class USStockYfFetcher(BaseFetcher):
                 logging.error(f"yfinance 未返回数据 for {ticker}")
                 continue
             last = bars[-1]
+            prev_close = None
+            if len(bars) >= 2 and bars[-2].timestamp.date() < last.timestamp.date():
+                prev_close = bars[-2].close or None
             prices.append(PriceData(
                 symbol=info["symbol"],
                 market=info.get("market", "US"),
@@ -83,6 +86,7 @@ class USStockYfFetcher(BaseFetcher):
                 close=last.close,
                 volume=last.volume,
                 frequency="1m",
+                prev_close=prev_close,
             ))
         got = {price.symbol for price in prices}
         missing = [info for info in symbols if info["symbol"] not in got]

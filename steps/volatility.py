@@ -2,6 +2,7 @@ import logging
 from typing import List
 
 from steps.base import Step
+from config.minute_targets import MINUTE_STOCK_MARKETS
 from models.market import PriceData, VolatilityAlert, FrequencyType
 from analyzers.volatility_analyzer import VolatilityAnalyzer
 from analyzers.threshold_manager import ThresholdManager
@@ -22,6 +23,13 @@ class VolatilityStep(Step):
     async def process(self, items: list) -> List[VolatilityAlert]:
         alerts: List[VolatilityAlert] = []
 
+        if any(
+            isinstance(p, PriceData) and p.frequency == '1m'
+            and p.market in MINUTE_STOCK_MARKETS
+            for p in items
+        ):
+            self.threshold_manager.reload_minute_targets()
+
         for price_data in items:
             if not isinstance(price_data, PriceData):
                 continue
@@ -29,7 +37,14 @@ class VolatilityStep(Step):
             frequency = FrequencyType(price_data.frequency)
 
             if frequency == FrequencyType.MINUTE:
-                alert = self.volatility_analyzer.analyze_minute_volatility(price_data)
+                new_alerts = self.volatility_analyzer.analyze_minute_volatility(price_data)
+                for alert in new_alerts:
+                    alerts.append(alert)
+                    logging.info(
+                        f"[{self.name}] 发现波动告警({alert.basis or '上次轮询'}): "
+                        f"{alert.name} {alert.current_change:.2f}%"
+                    )
+                continue
             elif frequency == FrequencyType.DAILY:
                 alert = self.volatility_analyzer.analyze_daily_volatility(price_data)
             elif frequency == FrequencyType.WEEKLY:
