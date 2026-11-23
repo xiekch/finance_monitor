@@ -22,7 +22,7 @@ STATUSES = ("open", "closed")
 SECTIONS = ("理由", "目标价", "失效条件", "参考价", "观察条件")
 REVIEW_TITLE_PREFIX = "复盘"
 REVIEW_KINDS = {"due": "到期结案", "weekly": "周回溯", "monthly": "月回溯"}
-REVIEW_LINES = ("- 价格：", "- 逻辑：", "- 事件过程：", "- 经验：")
+REVIEW_LINES = ("- 结论：", "- 价格：", "- 逻辑：", "- 事件过程：", "- 经验：")
 NO_NEW_FINDING = "NO_NEW_FINDING"
 
 _A_SHARE_SUFFIX = re.compile(r"(?<=^\d{6})\.(SS|SH|SZ|BJ)$")
@@ -228,6 +228,19 @@ def check_review_note(note: str, kind: str) -> Optional[str]:
     if missing:
         raise ValueError(f"复盘缺少：{'、'.join(missing)}")
     return cleaned
+
+
+_BLANK_LESSONS = {"", "无", "没有", "暂无", "无经验", "无新增经验", "none", "n/a"}
+_PUNCT_OR_SPACE = re.compile(r"[\s。．.；;，,、！!：:\"'“”‘’（）()\[\]【】-]+")
+
+
+def normalize_lesson(text: str) -> str:
+    return _PUNCT_OR_SPACE.sub("", text or "").lower()
+
+
+def is_blank_lesson(text: str) -> bool:
+    """「无」「无。」「没有」之类都当作没有经验，不落盘、不推送。"""
+    return normalize_lesson(text) in _BLANK_LESSONS
 
 
 def review_line(review: str, marker: str) -> str:

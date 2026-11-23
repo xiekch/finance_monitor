@@ -68,7 +68,22 @@ def test_last_30_lessons(tmp_path: Path):
     assert "经验 5" in recent and "经验 34" in recent
 
 
+def test_blank_and_duplicate_lessons_are_not_written(tmp_path: Path):
+    store = AdviceStore(tmp_path)
+    kw = dict(advice_id="x", symbol="NVDA", kind="到期结案", on=date(2026, 10, 1))
+    for blank in ("无", "无。", " 没有 ", "暂无", ""):
+        assert store.append_lesson(blank, **kw) is False
+    assert store.recent_lessons(30) == []
+
+    assert store.append_lesson("财报日要写进失效条件。", **kw) is True
+    # 换了标点和空格的同一句话不重复写
+    assert store.append_lesson("财报日 要写进失效条件", **{**kw, "symbol": "AAPL"}) is False
+    assert store.append_lesson("贴着前低的单，失效价放前低下方。", **kw) is True
+    assert len(store.recent_lessons(30)) == 2
+
+
 DUE_NOTE = """## 复盘 2026-10-26 到期结案
+- 结论：➖ 目标价没碰到，等待没有结果
 - 价格：建议时 140 美元，目标价 160 美元，结案时 151 美元。窗口内未碰到目标价。来源 https://example.com/close
 - 逻辑：需求仍在。
 - 事件过程：10 月下旬订单评论偏多。

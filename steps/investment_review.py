@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date
 from pathlib import Path
 from typing import Callable, List
 
 from clients.llm_client.factory import build_investment_llm_client
 from config.investment import ADVICE_ROOT, MAX_REVIEWS_PER_RUN
-from models.advice import REVIEW_KINDS, AdviceDoc, InvestmentMessage, commit_message
+from models.advice import REVIEW_KINDS, AdviceDoc, InvestmentMessage, commit_message, is_blank_lesson, review_line
 from steps.base import Step
 from steps.investment_parse import build_review_prompt
 from storage.advice_git import AdviceCommitter
@@ -77,6 +78,27 @@ class ReviewStep(Step):
         return self.store.list_created_between(start, end)
 
 
+_URL = re.compile(r"\s*[（(]?\s*https?://[^\s）)]+\s*[）)]?")
+
+
+def _strip_urls(text: str) -> str:
+    return _URL.sub("", text).strip()
+
+
 def format_review_message(doc: AdviceDoc, label: str) -> str:
-    body = doc.reviews[-1].split("\n", 1)[1] if "\n" in doc.reviews[-1] else ""
-    return f"**{label}｜{doc.id}｜{doc.symbol} {doc.name}｜{doc.direction}**\n{body.strip()}"
+    """推送只发结论和要点（价格、逻辑、经验）；事件过程和来源链接留在文件里。
+
+    没有「结论」行的旧复盘按原样整段推送。
+    """
+    review = doc.reviews[-1]
+    head = f"**{label}｜{doc.id}｜{doc.symbol} {doc.name}｜{doc.direction}**"
+    conclusion = review_line(review, "- 结论：")
+    if not conclusion:
+        body = review.split("\n", 1)[1] if "\n" in review else ""
+        return f"{head}\n{body.strip()}"
+    lines = [head, f"**{_strip_urls(conclusion)}**", ""]
+    for marker in ("价格", "逻辑", "经验"):
+        text = _strip_urls(review_line(review, f"- {marker}："))
+        if text and not (marker == "经验" and is_blank_lesson(text)):
+            lines.append(f"{marker}：{text}")
+    return "\n".join(lines).strip()

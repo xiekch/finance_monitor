@@ -14,6 +14,8 @@ from models.advice import (
     AdviceDoc,
     check_review_note,
     format_price,
+    is_blank_lesson,
+    normalize_lesson,
     parse_advice_markdown,
     render_advice_markdown,
     review_line,
@@ -74,19 +76,27 @@ class AdviceStore:
             doc.reviews.append(cleaned)
             _atomic_write(path, render_advice_markdown(doc))
         lesson = review_line(cleaned, "- 经验：")
-        if lesson and lesson != "无":
+        if not is_blank_lesson(lesson):
             self.append_lesson(lesson, advice_id=doc.id, symbol=doc.symbol,
                                kind=REVIEW_KINDS[kind], on=on or date.today())
         return doc
 
-    def append_lesson(self, text: str, *, advice_id: str, symbol: str, kind: str, on: date) -> None:
+    def append_lesson(self, text: str, *, advice_id: str, symbol: str, kind: str, on: date) -> bool:
+        """只落盘有内容、且和已有教训不重复的经验；返回是否真的写入。"""
+        if is_blank_lesson(text):
+            return False
         path = self.root / LESSONS_FILE
         block = f"## {on.isoformat()} · {symbol} · {advice_id} · {kind}\n{text.strip()}\n"
         with _lock_for(path):
             existing = path.read_text(encoding="utf-8") if path.exists() else ""
+            wanted = normalize_lesson(text)
+            body_lines = (ln for ln in existing.splitlines() if not ln.startswith("## "))
+            if any(normalize_lesson(ln) == wanted for ln in body_lines):
+                return False
             if existing and not existing.endswith("\n\n"):
                 existing = existing.rstrip("\n") + "\n\n"
             _atomic_write(path, existing + block)
+        return True
 
     # ── 读 ─────────────────────────────────────────────
 

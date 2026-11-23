@@ -69,6 +69,7 @@ def test_parse_drops_duplicate_in_batch_and_caps_at_three():
 def test_review_sentinel_and_note():
     assert parse_review_response("NO_NEW_FINDING", kind="weekly") is None
     note = parse_review_response("""## 复盘 2026-10-26 周回溯
+- 结论：➖ 本周没有新结论
 - 价格：未碰到目标价。
 - 逻辑：催化剂未落地。
 - 事件过程：本周没有新订单。
@@ -113,6 +114,15 @@ def test_review_prompt_window_stops_at_expiry(advice_md):
     assert "等的是哪一侧" in prompt
     assert "低于参考价视为偏多" in prompt and "高于参考价视为偏空" in prompt
     assert "不是方向对错的唯一标准" in prompt
+
+
+def test_review_prompt_defaults_lesson_to_none_and_asks_for_conclusion(advice_md):
+    doc = parse_advice_markdown(advice_md(19, expiry=date(2026, 10, 25)))
+    doc.id = "2026-10-19-1"
+    prompt = build_review_prompt(doc, kind="due", today=date(2026, 10, 26))
+    assert "- 结论：" in prompt
+    assert "默认写「无」" in prompt
+    assert "意思和 advice/lessons.md 里已有的教训相同" in prompt
 
 
 def test_parse_requires_sided_watch():

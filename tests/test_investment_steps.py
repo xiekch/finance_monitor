@@ -76,6 +76,7 @@ ADVICE = """# 建议 1
 """
 
 DUE = """## 复盘 2026-10-28 到期结案
+- 结论：➖ 没碰到目标价，等待没有结果
 - 价格：建议时 140，目标价 160，结案时 151。未碰到目标价。来源 https://example.com/close
 - 逻辑：需求仍在。
 - 事件过程：订单评论偏多。
@@ -83,6 +84,7 @@ DUE = """## 复盘 2026-10-28 到期结案
 """
 
 WEEKLY = """## 复盘 2026-10-26 周回溯
+- 结论：❌ 碰到失效价，催化剂落空
 - 价格：碰到失效价。
 - 逻辑：催化剂落空。
 - 事件过程：订单下修。
@@ -197,3 +199,51 @@ def test_review_cap_skips_extra_files(tmp_path: Path, advice_md):
     _run(step, notifier)
     assert len(llm.prompts) == 1
     assert "跳过 1 份" in notifier.sent[-1]
+
+
+LONG_DUE = """## 复盘 2026-10-28 到期结案
+- 结论：❌ 没做对：10/27 盘中碰到失效价 120，之后收 118
+- 价格：建议时 140，失效价 120，结案时 118（https://example.com/close）。10/27 盘中碰到失效价。
+- 逻辑：订单下修，当初的需求逻辑没有兑现。
+- 事件过程：10/26 开 139 收 138；10/27 开 130 低 119 收 121；10/28 收 118。https://example.com/day
+- 经验：失效价被碰到就认错，不要等反弹。
+"""
+
+
+def test_due_push_shows_conclusion_and_key_points_only(tmp_path: Path, advice_md):
+    AdviceStore(tmp_path).save_new(parse_advice_markdown(advice_md(25, expiry=date(2026, 10, 27))))
+    notifier = FakeNotifier()
+    step = ReviewStep(kind="due", store_root=tmp_path, llm=FakeLLM([LONG_DUE]),
+                      committer=FakeCommitter(), today_fn=lambda: date(2026, 10, 28))
+    _run(step, notifier)
+    text = notifier.sent[0]
+    body = text.split("\n", 1)[1]
+    assert body.startswith("**❌ 没做对：10/27 盘中碰到失效价 120，之后收 118**")
+    assert "价格：建议时 140，失效价 120，结案时 118。" in text
+    assert "逻辑：订单下修" in text
+    assert "经验：失效价被碰到就认错" in text
+    assert "事件过程" not in text and "10/26 开 139" not in text
+    assert "http" not in text
+
+
+def test_push_skips_empty_lesson_and_keeps_legacy_reviews(tmp_path: Path, advice_md):
+    from steps.investment_review import format_review_message
+
+    doc = parse_advice_markdown(advice_md(25))
+    doc.id = "2026-10-26-1"
+    doc.reviews = [LONG_DUE.replace("- 经验：失效价被碰到就认错，不要等反弹。", "- 经验：无")]
+    assert "经验" not in format_review_message(doc, "到期结案").split("\n", 1)[1]
+
+    legacy = "## 复盘 2026-10-28 到期结案\n- 价格：旧格式。\n- 逻辑：旧逻辑。\n- 事件过程：旧过程。\n- 经验：旧经验。"
+    doc.reviews = [legacy]
+    text = format_review_message(doc, "到期结案")
+    assert "- 事件过程：旧过程。" in text and "- 价格：旧格式。" in text
+
+
+def test_review_without_conclusion_is_rejected():
+    import pytest
+    from models.advice import check_review_note
+
+    note = "## 复盘 2026-10-28 到期结案\n- 价格：x\n- 逻辑：y\n- 事件过程：z\n- 经验：无\n"
+    with pytest.raises(ValueError, match="结论"):
+        check_review_note(note, "due")
