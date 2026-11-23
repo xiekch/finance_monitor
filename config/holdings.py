@@ -35,6 +35,9 @@ MARKET_LABELS = {
     "US": "美股",
     "CRYPTO": "加密货币",
 }
+# 没有现金分红的品种：不查分红，分红记 0。
+NO_DIVIDEND_MARKETS = frozenset({"FUT", "CRYPTO"})
+DIVIDEND_ATTEMPTS = 3
 CASH_CURRENCIES = ("CNY", "USD", "HKD")
 CURRENCY_LABELS = {"CNY": "人民币", "USD": "美元", "HKD": "港币"}
 
@@ -52,7 +55,7 @@ HOLDINGS_LESSON_LIMIT = 10
 HOLDINGS_PROMPT_TEMPLATE = """今天是 {today}（北京时间）。你是一名谨慎的投资研究员，请逐个检查下面的持仓，给出今天的操作建议。
 
 ## 持仓
-成本价来自我的持仓记录，现价来自行情接口，盈亏和占比由程序算好，直接使用，不要重算，也不要另找报价替换。盈亏是现价相对成本价的涨跌幅。占比是按现价算的市值占总资产（含现金）的比例。
+成本价来自我的持仓记录，现价来自行情接口，盈亏和占比由程序算好，直接使用，不要重算，也不要另找报价替换。盈亏是现价相对成本价的涨跌幅；标着「含已收分红」的，已经加上持有期内收到的税前现金分红。占比是按现价算的市值占总资产（含现金）的比例。
 
 {holdings_block}
 

@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from analyzers.portfolio import PriceQuote
+from analyzers.portfolio import Dividend, PriceQuote
 from config.investment import DISCLAIMER
 from steps.holdings_advice import HoldingsAdviceStep
 from steps.notify.investment import HoldingsNotifyStep
@@ -106,7 +106,7 @@ def env(tmp_path):
     config = tmp_path / "holdings.toml"
     config.write_text(CONFIG, encoding="utf-8")
 
-    def make(answers, *, today=TODAY, fx=_fx, quotes=QUOTES):
+    def make(answers, *, today=TODAY, fx=_fx, quotes=QUOTES, dividends=None):
         clock = {"today": today}
         llm = FakeLLM(answers)
 
@@ -115,10 +115,16 @@ def env(tmp_path):
                 raise quotes
             return {h.symbol: quotes[h.symbol] for h in holdings if h.symbol in quotes}
 
+        async def dividend_fetcher(holdings, day):
+            if isinstance(dividends, Exception):
+                raise dividends
+            return dict(dividends or {})
+
         step = HoldingsAdviceStep(
             config_path=config, report_root=tmp_path / "reports",
             advice_root=tmp_path / "advice", llm=llm, fx_fetcher=fx,
-            quote_fetcher=quote_fetcher, today_fn=lambda: clock["today"],
+            quote_fetcher=quote_fetcher, dividend_fetcher=dividend_fetcher,
+            today_fn=lambda: clock["today"],
         )
         return step, llm, clock
 
@@ -389,3 +395,47 @@ def test_hk_holding_does_not_match_a_share_advice():
     assert _held(hk, "0700.HK") and not _held(hk, "000700")
     a = [Holding(symbol="000700", market="SZ", name="模塑科技", quantity=1, cost=1)]
     assert _held(a, "000700") and _held(a, "000700.SZ") and not _held(a, "0700.HK")
+
+
+def test_dividends_flow_into_pnl_report_and_prompt(env):
+    env.config.write_text("since = 2026-11-01\n" + CONFIG, encoding="utf-8")
+    # 茅台 100 股 × 每股 20 = 2000；腾讯、英伟达没有分红
+    dividends = {
+        "600519": [Dividend(date(2026, 10, 30), 99), Dividend(date(2026, 11, 10), 20)],
+        "00700": [], "NVDA": [],
+    }
+    step, llm, _ = env([DAY1], dividends=dividends)
+    sent = _run(step)
+    # 茅台：(45000 - 50000 + 2000) / 50000 = -6.0%；总盈亏 (11000 + 2000) / 73000 = +17.8%
+    assert "浮动盈亏 +17.8%（含分红）" in sent[0]
+    assert "**减仓** 600519 贵州茅台｜占比 40.5% · 盈亏 -6.0%" in sent[0]
+    assert "- 盈亏：-6.0%（含已收分红）" in llm.prompts[0]
+    assert "- 盈亏：+100.0%\n" in llm.prompts[0]   # 没有分红的不加标注
+    report = (env.reports / "2026-11-15.md").read_text(encoding="utf-8")
+    assert "其中持有期分红 +2,000.00" in report
+    assert "| 45,000.00 | 2,000.00 | -3,000.00 | -6.0% |" in report
+    assert "没有设置 since" not in report
+    # 分红金额和数量一样，不进推送和提示词
+    for text in (*sent, llm.prompts[0]):
+        assert "2,000" not in text and "2000" not in text
+
+
+def test_dividend_fetch_failure_keeps_report_and_flags_holdings(env):
+    env.config.write_text("since = 2026-11-01\n" + CONFIG, encoding="utf-8")
+    for dividends in ({}, OSError("连接被重置")):
+        step, llm, _ = env([DAY1], dividends=dividends)
+        sent = _run(step)
+        assert len(llm.prompts) == 1
+        # 盈亏退回只有价差，并且说清楚没算分红
+        assert "浮动盈亏 +15.1% · 现金" in sent[0]   # 标题不带「（含分红）」
+        assert "没取到分红记录，盈亏未含分红：贵州茅台、腾讯控股、英伟达" in sent[0]
+        assert "- 盈亏：-10.0%\n" in llm.prompts[0]   # 价差盈亏，没有「（含已收分红）」标注
+
+
+def test_report_asks_for_since_when_missing(env):
+    step, _, _ = env([DAY1], dividends={})
+    sent = _run(step)
+    report = (env.reports / "2026-11-15.md").read_text(encoding="utf-8")
+    assert "没有设置 since（持有起始日），分红没有计入盈亏：贵州茅台、腾讯控股、英伟达" in report
+    # 只在本地报告里提醒，不拿这条配置提醒去打扰推送
+    assert "since" not in sent[0]

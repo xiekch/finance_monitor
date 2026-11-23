@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
-from config.holdings import BASE_CURRENCY
+from config.holdings import BASE_CURRENCY, NO_DIVIDEND_MARKETS
 from models.holdings import Holding, HoldingsConfig, Rules
 
 # 0.4 * 100 在浮点里是 40.00000000000001，恰好踩线不算违规。
@@ -20,6 +20,18 @@ class PriceQuote:
 
 
 @dataclass
+class Dividend:
+    """一次现金分红：除息日和每股（份、枚）的税前金额，币种同持仓。"""
+    ex_date: date
+    per_unit: float
+
+
+# Position.dividend_issue：分红没能计入的原因
+NO_SINCE = "no_since"          # 没设持有起始日，不知道哪些分红算在持有期内
+FETCH_FAILED = "fetch_failed"  # 分红接口没取到
+
+
+@dataclass
 class Position:
     holding: Holding
     cost_cny: float
@@ -28,6 +40,10 @@ class Position:
     price_date: Optional[date] = None
     price_source: str = ""
     value_cny: Optional[float] = None
+    # 持有期内已除息的税前现金分红；None 表示没有算（见 dividend_issue）。
+    dividend_cny: Optional[float] = None
+    dividend_issue: str = ""
+    # 盈亏 = 市值 − 成本 + 分红
     pnl_cny: Optional[float] = None
     pnl_pct: Optional[float] = None
     weight_pct: Optional[float] = None
@@ -46,6 +62,7 @@ class Portfolio:
     cash_pct: Optional[float] = None
     pnl_cny: Optional[float] = None
     pnl_pct: Optional[float] = None
+    dividend_cny: Optional[float] = None   # 没传分红数据时为 None
     currency_pct: Dict[str, float] = field(default_factory=dict)
     breaches: List[str] = field(default_factory=list)
     breached_symbols: Set[str] = field(default_factory=set)
@@ -86,8 +103,14 @@ def build_portfolio(config: HoldingsConfig, fx: Dict[str, float]) -> Portfolio:
 
 def apply_prices(
     portfolio: Portfolio, quotes: Dict[str, PriceQuote], rules: Optional[Rules] = None,
+    dividends: Optional[Dict[str, List[Dividend]]] = None, today: Optional[date] = None,
 ) -> Portfolio:
-    """用现价估值。quotes 以持仓的 symbol 为键；没有现价的持仓保持空值。"""
+    """用现价估值。quotes 以持仓的 symbol 为键；没有现价的持仓保持空值。
+
+    dividends 以 symbol 为键：不传就不算分红，盈亏只有价差；传了，持有起始日（since）
+    之后、today 当天及以前除息的分红记入盈亏。键不在里面表示没取到。
+    """
+    today = today or date.today()
     rates = {BASE_CURRENCY: 1.0, **portfolio.fx}
     by_currency: Dict[str, float] = {}
     for currency, amount in portfolio.cash.items():
@@ -103,7 +126,9 @@ def apply_prices(
         position.price_date = quote.day
         position.price_source = quote.source
         position.value_cny = h.quantity * h.multiplier * quote.price * rates[h.currency]
-        position.pnl_cny = position.value_cny - position.cost_cny
+        position.dividend_cny, position.dividend_issue = _dividend_income(
+            h, dividends, today, rates[h.currency])
+        position.pnl_cny = position.value_cny - position.cost_cny + (position.dividend_cny or 0.0)
         position.pnl_pct = _pct(position.pnl_cny, position.cost_cny)
         by_currency[h.currency] = by_currency.get(h.currency, 0.0) + position.value_cny
         priced.append(position)
@@ -120,8 +145,27 @@ def apply_prices(
         priced_cost = sum(p.cost_cny for p in priced)
         portfolio.pnl_cny = sum(p.pnl_cny for p in priced)
         portfolio.pnl_pct = _pct(portfolio.pnl_cny, priced_cost)
+    if dividends is not None:
+        portfolio.dividend_cny = sum(p.dividend_cny or 0.0 for p in priced)
     _check_rules(portfolio, priced, rules or Rules())
     return portfolio
+
+
+def _dividend_income(
+    holding: Holding, dividends: Optional[Dict[str, List[Dividend]]], today: date, rate: float,
+) -> Tuple[Optional[float], str]:
+    """持有期内的分红折人民币，数量按现在的数量算。返回（金额, 没算的原因）。"""
+    if dividends is None:
+        return None, ""
+    if holding.market in NO_DIVIDEND_MARKETS:
+        return 0.0, ""
+    if holding.since is None:
+        return None, NO_SINCE
+    records = dividends.get(holding.symbol)
+    if records is None:
+        return None, FETCH_FAILED
+    per_unit = sum(d.per_unit for d in records if holding.since < d.ex_date <= today)
+    return per_unit * holding.quantity * holding.multiplier * rate, ""
 
 
 def _check_rules(portfolio: Portfolio, priced: List[Position], rules: Rules) -> None:

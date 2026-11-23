@@ -3,16 +3,17 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from config.holdings import CASH_CURRENCIES, MARKET_CURRENCY
 
 _HOLDING_KEYS = frozenset(
     {"symbol", "market", "name", "quantity", "cost", "multiplier", "thesis", "exit_when",
-     "alert_day_pct", "alert_window_pct"}
+     "alert_day_pct", "alert_window_pct", "since"}
 )
 _RULE_KEYS = frozenset({"max_position_pct", "min_cash_pct", "horizon"})
-_TOP_KEYS = frozenset({"cash", "rules", "holdings"})
+_TOP_KEYS = frozenset({"cash", "rules", "holdings", "since"})
 
 _SYMBOL_SUFFIX = re.compile(r"\.[A-Z]+$")
 _SYMBOL_PREFIX = re.compile(r"^(SH|SZ|BJ|HK)(?=\d+$)")
@@ -35,6 +36,8 @@ class Holding:
     # 盯盘阈值（%），不填用 config/minute_targets.py 的默认值
     alert_day_pct: Optional[float] = None     # 相对昨收
     alert_window_pct: Optional[float] = None  # 相对 30 分钟前
+    # 持有起始日：除息日晚于这天的现金分红才计入盈亏。不填且顶层也没有 since 就不算分红。
+    since: Optional[date] = None
 
     @property
     def currency(self) -> str:
@@ -74,8 +77,13 @@ def parse_holdings_config(data: Dict[str, Any]) -> HoldingsConfig:
     for key in sorted(set(data) - _TOP_KEYS):
         errors.append(f"不认识的小节 {key}")
 
+    default_since = None
+    if "since" in data:
+        default_since = _parse_since(data["since"])
+        if default_since is None:
+            errors.append(_SINCE_PROBLEM.replace("since", "顶层 since", 1))
     config = HoldingsConfig(
-        holdings=_parse_holdings(data.get("holdings", []), errors),
+        holdings=_parse_holdings(data.get("holdings", []), errors, default_since),
         cash=_parse_cash(data.get("cash", {}), errors),
         rules=_parse_rules(data.get("rules", {}), errors),
     )
@@ -86,7 +94,19 @@ def parse_holdings_config(data: Dict[str, Any]) -> HoldingsConfig:
     return config
 
 
-def _parse_holdings(raw: Any, errors: List[str]) -> List[Holding]:
+_SINCE_PROBLEM = "since 要写成日期，如 since = 2026-10-23（不加引号）"
+
+
+def _parse_since(value: Any) -> Optional[date]:
+    """TOML 的日期读出来是 date；带时间的取日期部分。字符串、数字都不认。"""
+    if isinstance(value, datetime):
+        return value.date()
+    return value if isinstance(value, date) else None
+
+
+def _parse_holdings(
+    raw: Any, errors: List[str], default_since: Optional[date] = None,
+) -> List[Holding]:
     if not isinstance(raw, list) or any(not isinstance(item, dict) for item in raw):
         errors.append("holdings 要写成 [[holdings]] 列表")
         return []
@@ -118,6 +138,7 @@ def _parse_holdings(raw: Any, errors: List[str]) -> List[Holding]:
             alert_window_pct=(
                 float(item["alert_window_pct"]) if "alert_window_pct" in item else None
             ),
+            since=_parse_since(item["since"]) if "since" in item else default_since,
         ))
     return holdings
 
@@ -160,6 +181,8 @@ def _holding_problems(item: Dict[str, Any]) -> List[str]:
     for key in ("thesis", "exit_when"):
         if key in item and not isinstance(item[key], str):
             problems.append(f"{key} 要写成字符串")
+    if "since" in item and _parse_since(item["since"]) is None:
+        problems.append(_SINCE_PROBLEM)
     return problems
 
 

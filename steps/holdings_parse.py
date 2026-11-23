@@ -98,7 +98,7 @@ def _price_lines(position: Position) -> List[str]:
         ]
     return [
         f"- 现价：{format_price(position.price)}（{position.price_date.isoformat()}）",
-        f"- 盈亏：{position.pnl_pct:+.1f}%",
+        f"- 盈亏：{position.pnl_pct:+.1f}%" + ("（含已收分红）" if position.dividend_cny else ""),
         f"- 占比：{position.weight_pct:.1f}%",
     ]
 

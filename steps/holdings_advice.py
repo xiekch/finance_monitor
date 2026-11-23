@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Awaitable, Callable, Dict, Iterable, List, Optional
 
 from analyzers.portfolio import (
+    FETCH_FAILED,
+    NO_SINCE,
+    Dividend,
     Portfolio,
     Position,
     PriceQuote,
@@ -28,6 +31,7 @@ from config.holdings import (
     HOLDINGS_REPORT_ROOT,
 )
 from config.investment import ADVICE_ROOT, REPO_ROOT
+from fetchers.holding_dividends import fetch_holding_dividends
 from fetchers.holding_quotes import fetch_holding_quotes
 from fetchers.sina_quote import fetch_fx_rates
 from models.advice import InvestmentMessage, format_price
@@ -45,6 +49,7 @@ from storage.holdings_store import HoldingsReportStore, load_holdings_config
 
 FxFetcher = Callable[[Iterable[str]], Awaitable[Dict[str, float]]]
 QuoteFetcher = Callable[[List[Holding], date], Awaitable[Dict[str, PriceQuote]]]
+DividendFetcher = Callable[[List[Holding], date], Awaitable[Dict[str, List[Dividend]]]]
 # 仓位违反规则只能支持往下调仓位，不能当作加仓的理由。
 _REDUCING = ("减仓", "清仓")
 _NOT_COVERED = "未覆盖"
@@ -60,6 +65,7 @@ class HoldingsAdviceStep(Step):
         llm=None,
         fx_fetcher: FxFetcher = fetch_fx_rates,
         quote_fetcher: QuoteFetcher = fetch_holding_quotes,
+        dividend_fetcher: DividendFetcher = fetch_holding_dividends,
         today_fn: Callable[[], date] = date.today,
     ):
         self.name = "HoldingsAdviceStep"
@@ -69,6 +75,7 @@ class HoldingsAdviceStep(Step):
         self.llm = llm or build_investment_llm_client()
         self.fx_fetcher = fx_fetcher
         self.quote_fetcher = quote_fetcher
+        self.dividend_fetcher = dividend_fetcher
         self.today_fn = today_fn
 
     async def process(self, items: list) -> list:
@@ -93,7 +100,13 @@ class HoldingsAdviceStep(Step):
             return self._failed(today, f"取不到现价：{e}")
         if config.holdings and not quotes:
             return self._failed(today, "所有持仓的现价都没取到，没有调用模型")
-        apply_prices(portfolio, quotes, config.rules)
+        try:
+            dividends = await self.dividend_fetcher(config.holdings, today)
+        except Exception as e:
+            # 分红只影响盈亏数字，取不到不拦住整份日报：报告里会标出哪些持仓没算。
+            logging.error(f"[{self.name}] 取分红失败: {e}", exc_info=True)
+            dividends = {}
+        apply_prices(portfolio, quotes, config.rules, dividends=dividends, today=today)
 
         # 只和今天之前的结论比：同一天重跑不拿自己上一轮的结果当「上次」。
         previous = self.reports.latest_actions(today - timedelta(days=1))
@@ -193,7 +206,11 @@ class _View:
 
     def _overview(self, note: str) -> str:
         p = self.portfolio
-        head = [f"**持仓日报 {self.today}**", f"浮动盈亏 {_signed_pct(p.pnl_pct)} · 现金 {_pct(p.cash_pct)}"]
+        with_dividend = "（含分红）" if p.dividend_cny else ""
+        head = [
+            f"**持仓日报 {self.today}**",
+            f"浮动盈亏 {_signed_pct(p.pnl_pct)}{with_dividend} · 现金 {_pct(p.cash_pct)}",
+        ]
         if p.currency_pct:
             ranked = sorted(p.currency_pct.items(), key=lambda kv: -kv[1])
             head.append("币种：" + " · ".join(
@@ -231,6 +248,9 @@ class _View:
                 "没取到现价，未计入占比和盈亏：" + "、".join(x.holding.name for x in p.unpriced)
                 + "。其余持仓和现金的占比因此偏高"
             )
+        failed = _with_issue(p, FETCH_FAILED)
+        if failed:
+            notes.append("没取到分红记录，盈亏未含分红：" + "、".join(failed))
         missing = self.parsed.missing(self.config.holdings)
         if missing:
             notes.append("模型没有覆盖：" + "、".join(h.name for h in missing))
@@ -286,7 +306,9 @@ class _View:
             "金额都折成人民币。本文件含持仓数量和金额，只留在本机，不要提交到 git。",
             "",
             f"- 总资产：{_money(p.total_cny)}",
-            f"- 浮动盈亏：{pnl}",
+            f"- 浮动盈亏：{pnl}" + (
+                f"，其中持有期分红 {_money(p.dividend_cny, signed=True)}"
+                if p.dividend_cny is not None else ""),
             f"- 现金：{_money(p.cash_cny)}（{_pct(p.cash_pct)}）",
         ]
         if p.cash:
@@ -295,10 +317,12 @@ class _View:
             lines.append(f"- 汇率（兑人民币，新浪）：{rates}")
         lines += [
             "",
-            "现价由程序从行情接口取（来源见表格最后一列），盈亏按配置里的成本价算，不含分红和已实现盈亏。",
+            "现价由程序从行情接口取（来源见表格最后一列）。盈亏 = 市值 − 成本 + 分红：成本按配置里的成本价，"
+            "分红是 since（持有起始日）之后除息的税前现金分红 × 现在的数量，折人民币，"
+            "来自东方财富、新浪（ETF）、雅虎财经（港股、美股）；不含已实现盈亏，不含送转股。",
             "",
-            "| 代码 | 名称 | 动作 | 数量 | 币种 | 成本价 | 现价 | 现价日期 | 市值 | 盈亏 | 盈亏% | 占比 | 现价来源 |",
-            "| --- | --- | --- | ---: | --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- |",
+            "| 代码 | 名称 | 动作 | 数量 | 币种 | 成本价 | 现价 | 现价日期 | 市值 | 分红 | 盈亏 | 盈亏% | 占比 | 现价来源 |",
+            "| --- | --- | --- | ---: | --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |",
         ]
         for position in p.positions:
             h = position.holding
@@ -314,16 +338,26 @@ class _View:
                 format_price(position.price) if priced else "—",
                 position.price_date.isoformat() if priced else "—",
                 _money(position.value_cny),
+                _money(position.dividend_cny),
                 _money(position.pnl_cny, signed=True),
                 _signed_pct(position.pnl_pct),
                 _pct(position.weight_pct),
                 position.price_source if priced else "—",
             ]) + " |")
         notes = self._notes()
+        no_since = _with_issue(p, NO_SINCE)
+        if no_since:
+            notes.append(
+                "没有设置 since（持有起始日），分红没有计入盈亏：" + "、".join(no_since)
+                + "。在 holdings.toml 顶部写 since = 2026-10-23（日期不加引号）即可")
         if notes:
             lines += ["", "## 提醒", *[f"- {n}" for n in notes]]
         lines += ["", "## 模型回复原文", "", raw.strip(), ""]
         return "\n".join(lines)
+
+
+def _with_issue(portfolio: Portfolio, issue: str) -> List[str]:
+    return [p.holding.name for p in portfolio.positions if p.dividend_issue == issue]
 
 
 def _sections_text(head: str, sections: Dict[str, str]) -> str:

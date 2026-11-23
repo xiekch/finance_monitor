@@ -2,7 +2,14 @@ from datetime import date
 
 import pytest
 
-from analyzers.portfolio import PriceQuote, apply_prices, build_portfolio
+from analyzers.portfolio import (
+    FETCH_FAILED,
+    NO_SINCE,
+    Dividend,
+    PriceQuote,
+    apply_prices,
+    build_portfolio,
+)
 from models.holdings import parse_holdings_config
 
 FX = {"CNY": 1.0, "USD": 7.0, "HKD": 0.9}
@@ -99,6 +106,85 @@ def test_futures_multiplier():
     apply_prices(portfolio, {"CU0": _quote(81000)})
     assert portfolio.positions[0].value_cny == 810000
     assert portfolio.positions[0].pnl_cny == 10000
+
+
+def _dividend_config():
+    since = date(2026, 10, 23)
+    return parse_holdings_config({
+        "since": since,
+        "holdings": [
+            # 成本 500 × 100 = 50000
+            {"symbol": "600519", "market": "SH", "name": "贵州茅台", "quantity": 100, "cost": 500},
+            # 成本 100 × 100 × 0.9 = 9000
+            {"symbol": "00700", "market": "HK", "name": "腾讯控股", "quantity": 100, "cost": 100},
+            {"symbol": "NVDA", "market": "US", "name": "英伟达", "quantity": 20, "cost": 100,
+             "since": date(2026, 11, 20)},
+            {"symbol": "BTCUSDT", "market": "CRYPTO", "name": "BTC", "quantity": 1, "cost": 100},
+            {"symbol": "000333", "market": "SZ", "name": "美的集团", "quantity": 10, "cost": 10},
+        ],
+    })
+
+
+def test_dividends_count_only_ex_dates_in_holding_window_and_convert_currency():
+    config = _dividend_config()
+    portfolio = build_portfolio(config, FX)
+    quotes = {"600519": _quote(500), "00700": _quote(100), "NVDA": _quote(100),
+              "BTCUSDT": _quote(100), "000333": _quote(10)}
+    dividends = {
+        "600519": [
+            Dividend(date(2026, 10, 23), 99),    # 除息日就是 since：不算
+            Dividend(date(2026, 10, 24), 20),    # 算：20 × 100 = 2000
+            Dividend(date(2026, 11, 14), 8),     # 算：8 × 100 = 800
+            Dividend(date(2026, 11, 16), 50),    # 还没除息：不算
+        ],
+        "00700": [Dividend(date(2026, 11, 1), 5)],            # 5 × 100 × 0.9 = 450
+        "NVDA": [Dividend(date(2026, 11, 12), 1),             # 在自己的 since 之前：不算
+                 Dividend(date(2026, 11, 21), 0.5)],          # 0.5 × 20 × 7 = 70
+        "000333": [],                                         # 取到了，没有分红
+    }
+    apply_prices(portfolio, quotes, dividends=dividends, today=date(2026, 11, 14))
+    maotai, tencent, nvda, btc, midea = portfolio.positions
+    assert maotai.dividend_cny == pytest.approx(2800) and maotai.dividend_issue == ""
+    assert tencent.dividend_cny == pytest.approx(450)
+    assert nvda.dividend_cny == 0   # 11 月 21 日在 today 之后
+    assert btc.dividend_cny == 0 and midea.dividend_cny == 0
+    # 盈亏 = 价差 + 分红；价格没动，盈亏就是分红
+    assert maotai.pnl_cny == pytest.approx(2800)
+    assert maotai.pnl_pct == pytest.approx(2800 / 50000 * 100)
+    assert portfolio.dividend_cny == pytest.approx(3250)
+    assert portfolio.pnl_cny == pytest.approx(3250)
+
+
+def test_dividend_in_foreign_currency_uses_fx():
+    config = _dividend_config()
+    portfolio = build_portfolio(config, FX)
+    apply_prices(portfolio, {"NVDA": _quote(100)},
+                 dividends={"NVDA": [Dividend(date(2026, 11, 21), 0.5)]}, today=date(2026, 11, 23))
+    assert portfolio.positions[2].dividend_cny == pytest.approx(0.5 * 20 * 7)
+
+
+def test_dividend_unknown_is_not_counted_as_zero():
+    config = parse_holdings_config({"holdings": [
+        {"symbol": "600519", "market": "SH", "name": "贵州茅台", "quantity": 100, "cost": 500,
+         "since": date(2026, 10, 23)},
+        {"symbol": "000333", "market": "SZ", "name": "美的集团", "quantity": 10, "cost": 10},
+    ]})
+    portfolio = build_portfolio(config, {})
+    apply_prices(portfolio, {"600519": _quote(510), "000333": _quote(11)},
+                 dividends={}, today=date(2026, 11, 23))
+    maotai, midea = portfolio.positions
+    assert maotai.dividend_cny is None and maotai.dividend_issue == FETCH_FAILED
+    assert midea.dividend_cny is None and midea.dividend_issue == NO_SINCE
+    # 盈亏仍然是价差，不因为分红没取到而丢掉
+    assert maotai.pnl_cny == 1000 and midea.pnl_cny == 10
+    assert portfolio.dividend_cny == 0
+
+
+def test_without_dividend_data_pnl_is_price_only():
+    portfolio = build_portfolio(_dividend_config(), FX)
+    apply_prices(portfolio, {"600519": _quote(510)})
+    assert portfolio.positions[0].pnl_cny == 1000
+    assert portfolio.positions[0].dividend_cny is None and portfolio.dividend_cny is None
 
 
 def test_rule_breaches():

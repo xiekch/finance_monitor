@@ -128,3 +128,29 @@ def test_example_file_is_valid():
     from config.holdings import HOLDINGS_EXAMPLE_FILE
     config = load_holdings_config(HOLDINGS_EXAMPLE_FILE)
     assert config.holdings and config.cash
+
+
+def test_since_top_level_default_and_per_holding_override(tmp_path):
+    from datetime import date
+    path = tmp_path / "holdings.toml"
+    path.write_text("since = 2026-10-23\n" + TOML + """
+[[holdings]]
+symbol = "000333"
+market = "SZ"
+name = "美的集团"
+quantity = 10
+cost = 70
+since = 2026-11-01
+""", encoding="utf-8")
+    first, second = load_holdings_config(path).holdings
+    assert first.since == date(2026, 10, 23) and second.since == date(2026, 11, 1)
+    # 不写 since 就是没有，不是今天
+    path.write_text(TOML, encoding="utf-8")
+    assert load_holdings_config(path).holdings[0].since is None
+
+
+def test_since_must_be_a_date():
+    data = {**VALID, "since": "2026-10-23"}
+    assert "顶层 since 要写成日期" in _errors(data)
+    holdings = [{**VALID["holdings"][0], "since": "2026-10-23"}]
+    assert "since 要写成日期" in _errors({**VALID, "holdings": holdings})
