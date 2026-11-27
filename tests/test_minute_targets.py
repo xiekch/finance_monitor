@@ -53,6 +53,13 @@ cost = 580
 """
 
 
+@pytest.fixture(autouse=True)
+def no_index_targets(monkeypatch):
+    """默认只看持仓；大盘指数的合并在单独的测试里验证。"""
+    import config.minute_targets as mt
+    monkeypatch.setattr(mt, "MONITOR_CONFIG", {"stocks": []})
+
+
 @pytest.fixture
 def holdings_file(tmp_path):
     path = tmp_path / "holdings.toml"
@@ -141,3 +148,39 @@ def test_fetch_steps_read_holdings(monkeypatch, holdings_file):
     asyncio.run(astock.FetchAStock("minute").process([]))
     asyncio.run(usstock.FetchUSStock("minute").process([]))
     assert seen == {"astock": ["600519", "159605"], "usstock": ["00700", "NVDA"]}
+
+
+def test_index_targets_merge_with_holdings(monkeypatch, holdings_file, tmp_path):
+    import config.minute_targets as mt
+    monkeypatch.setattr(mt, "MONITOR_CONFIG", {"stocks": [
+        {"name": "上证指数", "symbol": "000001", "market": "SH", "frequency": "minute",
+         "threshold": 0.8, "prev_close_threshold": 2.5},
+        {"name": "沪深300", "symbol": "000300", "market": "SH", "frequency": "minute",
+         "threshold": 0.8},                                    # 没写昨收阈值 → 默认值
+        {"name": "苹果", "symbol": "AAPL", "market": "US", "frequency": "daily", "threshold": 1.5},
+        {"name": "日经225", "symbol": "^N225", "market": "JP", "frequency": "minute",
+         "threshold": 1.0},                                    # 非盯盘市场，忽略
+        {"name": "茅台旧配置", "symbol": "600519", "market": "SH", "frequency": "minute",
+         "threshold": 9.9, "prev_close_threshold": 9.9},       # 和持仓重复 → 持仓优先
+    ]})
+    by_symbol = {t["symbol"]: t for t in minute_stock_targets(holdings_file)}
+    assert list(by_symbol) == ["000001", "000300", "600519", "159605", "00700", "NVDA"]
+    assert by_symbol["000001"]["prev_close_threshold"] == 2.5
+    assert by_symbol["000300"]["prev_close_threshold"] == 3.0
+    assert by_symbol["600519"]["name"] == "贵州茅台" and by_symbol["600519"]["threshold"] == 1.5
+
+    # 持仓读不到时，仍然盯大盘指数
+    only = minute_stock_targets(tmp_path / "nope.toml")
+    assert [t["symbol"] for t in only] == ["000001", "000300", "600519"]
+
+
+def test_default_config_has_index_minute_targets():
+    import config.monitor as monitor
+    from config.minute_targets import MINUTE_STOCK_MARKETS
+    mins = [a for a in monitor.MONITOR_CONFIG["stocks"] if a["frequency"] == "minute"]
+    assert {a["symbol"] for a in mins} == {"000001", "000300", "399001", "399006", "000688"}
+    assert all(a["market"] in MINUTE_STOCK_MARKETS for a in mins)
+
+    manager = ThresholdManager()
+    assert manager.get_threshold("000001", "minute", market="SH") == 0.8
+    assert manager.get_threshold("000001", "prev_close", market="SH") == 2.5

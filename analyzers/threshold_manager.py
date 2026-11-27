@@ -20,6 +20,10 @@ class ThresholdManager:
                 frequency = asset['frequency']
                 key = self._get_cache_key(symbol, market, frequency)
                 self.threshold_cache[key] = asset['threshold']
+                if 'prev_close_threshold' in asset:
+                    self.threshold_cache[
+                        self._get_cache_key(symbol, market, 'prev_close')
+                    ] = asset['prev_close_threshold']
                 name = asset.get('name')
                 if name:
                     self.name_cache.setdefault(self._name_key(symbol, market), name)

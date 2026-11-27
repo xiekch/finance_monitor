@@ -1,11 +1,20 @@
 """监控标的配置。
 
 按 asset_type 分组，frequency 在每条 item 内；同标的不同频次各一条。
-股票的分钟级标的不在这里：取自 config/holdings.toml 的股票持仓，见 config/minute_targets.py。
+股票的分钟级盯盘 = 下面 frequency='minute' 的大盘指数 + config/holdings.toml 里的股票持仓，
+合并逻辑见 config/minute_targets.py。分钟级条目的两个阈值（%）：
+  threshold             现价相对 30 分钟前
+  prev_close_threshold  现价相对昨收（日内涨跌幅，不写用 minute_targets 里的默认值）
 """
 
 MONITOR_CONFIG = {
     'stocks': [
+        # minute：A 股大盘指数。美股指数、日经、韩国综指不做分钟级盯盘（只有日级、周级）
+        {'name': '上证指数', 'symbol': '000001', 'market': 'SH', 'frequency': 'minute', 'threshold': 0.8, 'prev_close_threshold': 2.5},
+        {'name': '沪深300', 'symbol': '000300', 'market': 'SH', 'frequency': 'minute', 'threshold': 0.8, 'prev_close_threshold': 3.0},
+        {'name': '深证成指', 'symbol': '399001', 'market': 'SZ', 'frequency': 'minute', 'threshold': 1.0, 'prev_close_threshold': 3.0},
+        {'name': '创业板指', 'symbol': '399006', 'market': 'SZ', 'frequency': 'minute', 'threshold': 1.2, 'prev_close_threshold': 4.0},
+        {'name': '科创50', 'symbol': '000688', 'market': 'SH', 'frequency': 'minute', 'threshold': 1.2, 'prev_close_threshold': 4.0},
         # daily（A 股日/周线仅指数，见 AStockFetcher）
         {'name': '上证指数', 'symbol': '000001', 'market': 'SH', 'frequency': 'daily', 'threshold': 2.5},
         {'name': '沪深300', 'symbol': '000300', 'market': 'SH', 'frequency': 'daily', 'threshold': 3.0},

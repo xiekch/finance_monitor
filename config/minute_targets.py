@@ -1,6 +1,6 @@
-"""分钟级盯盘的股票标的：取自 config/holdings.toml 里的股票持仓。
+"""分钟级盯盘的股票标的：MONITOR_CONFIG 里的大盘指数 + config/holdings.toml 里的股票持仓。
 
-每次调用都重新读持仓文件，改持仓不用重启。持仓文件不进 git，所以这些标的
+每次调用都重新读持仓文件，改持仓不用重启。持仓文件不进 git，所以持仓标的
 只存在内存和本机日志里，不写进 config/monitor.py。
 
 盯盘有两个判据，任一超过阈值就告警：
@@ -9,9 +9,10 @@
 """
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from config.holdings import HOLDINGS_FILE
+from config.monitor import MONITOR_CONFIG
 from models.holdings import HoldingsConfigError
 from storage.holdings_store import load_holdings_config
 
@@ -27,15 +28,32 @@ DEFAULT_PREV_CLOSE_THRESHOLD = {"SH": 3.0, "SZ": 3.0, "HK": 3.0, "US": 4.0}
 
 
 def minute_stock_targets(path: Optional[Path] = None) -> List[dict]:
-    """持仓中的股票，格式同 MONITOR_CONFIG['stocks'] 的一条（frequency 固定为 minute）。
+    """分钟级盯盘的股票标的：MONITOR_CONFIG 里的大盘指数 + 持仓中的股票。
 
-    threshold 是相对 WINDOW_MINUTES 分钟前的阈值，prev_close_threshold 是相对昨收的阈值。
-    持仓文件读不到或写错时返回空列表并记 error，不影响其它 task。
+    格式同 MONITOR_CONFIG['stocks'] 的一条（frequency 固定为 minute）。threshold 是相对
+    WINDOW_MINUTES 分钟前的阈值，prev_close_threshold 是相对昨收的阈值。同一个 (代码, 市场)
+    持仓里的设置优先。持仓文件读不到或写错时只剩大盘指数，并记 error，不影响其它 task。
     """
+    targets: Dict[tuple, dict] = {}
+    for asset in MONITOR_CONFIG.get("stocks", []):
+        market = asset.get("market", "")
+        if asset["frequency"] != "minute" or market not in MINUTE_STOCK_MARKETS:
+            continue
+        targets[(asset["symbol"], market)] = {
+            **asset,
+            "prev_close_threshold": asset.get(
+                "prev_close_threshold", DEFAULT_PREV_CLOSE_THRESHOLD[market]),
+        }
+    for target in _holding_targets(path):
+        targets[(target["symbol"], target["market"])] = target
+    return list(targets.values())
+
+
+def _holding_targets(path: Optional[Path]) -> List[dict]:
     try:
         config = load_holdings_config(path or HOLDINGS_FILE)
     except HoldingsConfigError as e:
-        logging.error(f"[minute_targets] 读不到持仓，分钟级盯盘本轮没有标的: {e}")
+        logging.error(f"[minute_targets] 读不到持仓，本轮只盯大盘指数: {e}")
         return []
 
     targets = []
